@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { ServerConfig } = require('../models/schemas');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,7 +24,7 @@ module.exports = {
             .setTitle('📚 Command List')
             .setTimestamp()
             .setFooter({ 
-                text: 'Refer-a-Friend v0,1', 
+                text: 'Refer-a-Friend v0.1', 
                 iconURL: interaction.client.user.displayAvatarURL() 
             });
 

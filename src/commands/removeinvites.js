@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role } = require('../models/schemas');
+const { User, Role, ServerConfig } = require('../models/schemas');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -40,21 +40,30 @@ module.exports = {
         try {
             const targetUser = interaction.options.getUser('user');
             const amount = interaction.options.getInteger('amount');
-            const member = await interaction.guild.members.fetch(targetUser.id);
 
-            // Get user's highest invite role
-            const userRoles = await Role.find({
-                role_id: { $in: Array.from(member.roles.cache.keys()) },
+            // Get all roles with invite configurations for this user
+            const userRoles = await User.find({
+                user_id: targetUser.id,
                 guild_id: interaction.guildId
             });
 
-            if (userRoles.length === 0) {
+            if (!userRoles || userRoles.length === 0) {
                 return await interaction.editReply({
-                    content: `❌ ${targetUser.tag} doesn't have any roles that can create invites.`
+                    content: `❌ ${targetUser} doesn't have any roles that grant invites.`
                 });
             }
 
-            // Get the role with the highest max_invites
+            // Check if user has unlimited invites
+            const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
+            if (hasUnlimitedInvites) {
+                return await interaction.editReply({
+                    content: `❌ Cannot remove invites from ${targetUser} as they have unlimited invites.`
+                });
+            }
+
+            const member = await interaction.guild.members.fetch(targetUser.id);
+
+            // Get user's highest invite role
             const highestInviteRole = userRoles.reduce((prev, current) => 
                 (prev.max_invites > current.max_invites) ? prev : current
             );

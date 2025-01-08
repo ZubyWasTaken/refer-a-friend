@@ -66,11 +66,63 @@ module.exports = {
             // Handle removed roles
             const removedRoles = oldMember.roles.cache.filter(role => !newMember.roles.cache.has(role.id));
             for (const [roleId] of removedRoles) {
+                // First delete the role's invite record
                 await User.deleteOne({
                     user_id: newMember.id,
                     role_id: roleId,
                     guild_id: newMember.guild.id
                 });
+
+                // Get the current configured roles the user has
+                const userConfiguredRoles = configuredRoles.filter(r => 
+                    newMember.roles.cache.has(r.role_id)
+                );
+
+                if (userConfiguredRoles.length > 0) {
+                    const hasUnlimitedRole = userConfiguredRoles.some(r => r.max_invites === -1);
+                    
+                    if (hasUnlimitedRole) {
+                        await User.updateMany(
+                            {
+                                user_id: newMember.id,
+                                guild_id: newMember.guild.id
+                            },
+                            {
+                                invites_remaining: -1
+                            }
+                        );
+                    } else {
+                        // Get existing records
+                        const existingRecords = await User.find({
+                            user_id: newMember.id,
+                            guild_id: newMember.guild.id
+                        });
+
+                        for (const roleConfig of userConfiguredRoles) {
+                            const existingRecord = existingRecords.find(r => r.role_id === roleConfig.role_id);
+                            
+                            if (existingRecord) {
+                                // Update existing record
+                                await User.findOneAndUpdate(
+                                    {
+                                        _id: existingRecord._id
+                                    },
+                                    {
+                                        invites_remaining: roleConfig.max_invites
+                                    }
+                                );
+                            } else {
+                                // Create new record only if one doesn't exist
+                                await User.create({
+                                    user_id: newMember.id,
+                                    guild_id: newMember.guild.id,
+                                    role_id: roleConfig.role_id,
+                                    invites_remaining: roleConfig.max_invites
+                                });
+                            }
+                        }
+                    }
+                }
             }
 
         } catch (error) {

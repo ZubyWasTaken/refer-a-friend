@@ -111,20 +111,43 @@ module.exports = {
         guild_id: interaction.guildId
       });
 
+      if (!userRoles || userRoles.length === 0) {
+        return await interaction.editReply({
+          content: '❌ You don\'t have any roles that grant invites.',
+          flags: ['Ephemeral']
+        });
+      }
+
       // Check if user has any roles with unlimited invites
       const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
+      let highestInviteRole = null;
 
-      if (hasUnlimitedInvites) {
-        // If user has unlimited invites, create invite with default role
-        const invite = await interaction.channel.createInvite({
-          maxAge: 0, // Never expires
-          maxUses: 1, // One-time use
-          unique: true,
-        });
+      if (!hasUnlimitedInvites) {
+        // Calculate total remaining invites across all roles
+        const totalInvites = userRoles.reduce((sum, role) => sum + role.invites_remaining, 0);
+        
+        // Find role with highest invites (still needed for other logic)
+        highestInviteRole = userRoles.reduce((highest, current) => {
+          return (!highest || current.invites_remaining > highest.invites_remaining) ? current : highest;
+        }, null);
+
+        if (totalInvites <= 0) {
+          return await interaction.editReply({
+            content: '❌ You don\'t have any invites remaining.',
+            flags: ['Ephemeral']
+          });
+        }
 
         // Get the default role for this server
         const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
         const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+
+        // Create the invite
+        const invite = await interaction.channel.createInvite({
+          maxAge: 0,
+          maxUses: 1,
+          unique: true,
+        });
 
         // Store the invite in the database
         await Invite.create({
@@ -134,10 +157,25 @@ module.exports = {
           role_id: defaultRole.id
         });
 
-        return await interaction.editReply({
-          content: `✅ Created invite: ${invite.url}`,
-          flags: ['Ephemeral']
+        // Decrement one invite from the role with remaining invites
+        for (const role of userRoles) {
+          if (role.invites_remaining > 0) {
+            await User.findOneAndUpdate(
+              {
+                _id: role._id
+              },
+              {
+                $inc: { invites_remaining: -1 }
+              }
+            );
+            break;  // Only decrement one invite from the first available role
+          }
+        }
+
+        await interaction.editReply({
+          content: `✅ Created invite: ${invite.url}\nYou have ${totalInvites - 1} invites remaining.`
         });
+        return;
       }
 
       const invite = await interaction.channel.createInvite({

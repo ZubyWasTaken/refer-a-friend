@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role, Invite, JoinTracking } = require('../models/schemas');
+const { User, Role, Invite, ServerConfig } = require('../models/schemas');
 const { initializeUser } = require('../utils/userManager');
 
 module.exports = {
@@ -10,13 +10,15 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: ['Ephemeral'] });
 
+    
     // Check if server is setup
     const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
     if (!serverConfig) {
         return await interaction.editReply({
-            content: '❌ Server not set up! Contact a server administrator to set up the bot.',
+            content: '❌ This server is not set up for invite management.\n' +
+                    'Please contact a server administrator for assistance.',
             flags: ['Ephemeral']
-        });
+        })  
     }
 
     try {

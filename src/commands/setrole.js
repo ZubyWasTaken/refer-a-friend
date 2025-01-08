@@ -23,7 +23,8 @@ module.exports = {
     // Check if server is setup
     const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
     if (!serverConfig) {
-      return await interaction.editReply({
+      await interaction.deleteReply();
+      return await interaction.followUp({
         content: '❌ Server not set up! Please use `/setup` first.',
         flags: ['Ephemeral']
       });
@@ -32,7 +33,8 @@ module.exports = {
     // Check if command is being used in the correct channel
     if (interaction.channelId !== serverConfig.bot_channel_id) {
       const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
-      return await interaction.editReply({
+      await interaction.deleteReply();
+      return await interaction.followUp({
         content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
         flags: ['Ephemeral']
       });

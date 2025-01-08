@@ -40,58 +40,64 @@ module.exports = {
             const targetUser = interaction.options.getUser('user');
             const amount = interaction.options.getInteger('amount');
             const member = await interaction.guild.members.fetch(targetUser.id);
-
-            // Get user's highest invite role
-            const userRoles = await Role.find({
-                role_id: { $in: Array.from(member.roles.cache.keys()) },
+            // Get all roles with invite configurations for this user
+            const userRoles = await User.find({
+                user_id: targetUser.id,
                 guild_id: interaction.guildId
             });
 
-            if (userRoles.length === 0) {
+            // Check if user has unlimited invites
+            const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
+            if (hasUnlimitedInvites) {
                 return await interaction.editReply({
-                    content: `❌ ${targetUser.tag} doesn't have any roles that can create invites.`
+                    content: `✅ ${targetUser} already has unlimited invites.`
                 });
             }
 
-            // Get the role with the highest max_invites
-            const highestInviteRole = userRoles.reduce((prev, current) => 
-                (prev.max_invites > current.max_invites) ? prev : current
-            );
+            if (!userRoles || userRoles.length === 0) {
+                return await interaction.editReply({
+                    content: `❌ ${targetUser} doesn't have any roles that grant invites.`
+                });
+            }
 
-            // Find or create user record
-            const userInvites = await User.findOneAndUpdate(
-                {
-                    user_id: targetUser.id,
-                    role_id: highestInviteRole.role_id,
-                    guild_id: interaction.guildId
-                },
-                {
-                    $inc: { invites_remaining: amount }
-                },
-                {
-                    upsert: true,
-                    new: true
+            // Find the role with the lowest non-negative invite count
+            const roleToUpdate = userRoles.reduce((lowest, current) => {
+                if (current.invites_remaining >= 0) {
+                    if (!lowest || current.invites_remaining < lowest.invites_remaining) {
+                        return current;
+                    }
                 }
-            );
+                return lowest;
+            }, null);
 
-            // Log the action
-            await interaction.client.logger.logToChannel(interaction.guildId,
-                `🎟️ **Invites Added**\n` +
-                `Admin: ${interaction.user.tag}\n` +
-                `User: ${targetUser.tag}\n` +
-                `Amount: +${amount}\n` +
-                `New Total: ${userInvites.invites_remaining}`
-            );
+            if (roleToUpdate) {
+                await User.findOneAndUpdate(
+                    { _id: roleToUpdate._id },
+                    { $inc: { invites_remaining: amount } }
+                );
 
-            await interaction.editReply({
-                content: `✅ Added ${amount} invites to ${targetUser.tag}.\n` +
-                        `They now have ${userInvites.invites_remaining} invites remaining.`
-            });
+                await interaction.editReply({
+                    content: `✅ Successfully added ${amount} invites to ${targetUser}.`,
+                    flags: ['Ephemeral']
+                });
+                 // Log the action
+                await interaction.client.logger.logToChannel(interaction.guildId,
+                    `🎟️ **Invites Added**\n` +
+                    `Admin: ${interaction.user.tag}\n` +
+                    `User: ${targetUser.tag}\n` +
+                    `Amount: +${amount}\n` +
+                    `New Total: ${userRoles.invites_remaining}`
+                );
+            } else {
+                await interaction.editReply({
+                    content: `❌ ${targetUser} doesn't have any roles that grant invites.`
+                });
+            }
 
         } catch (error) {
             console.error('Error adding invites:', error);
             await interaction.editReply({
-                content: '❌ An error occurred while adding invites.'
+                content: 'There was an error adding invites.'
             });
         }
     }
