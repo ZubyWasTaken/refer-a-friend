@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { ServerConfig, Role } = require('../models/schemas');
+const { ServerConfig } = require('../models/schemas');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,6 +22,20 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
+    await interaction.deferReply();
+
+    // Add setup check at the start
+    const existingConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+    if (existingConfig) {
+      return await interaction.editReply({
+        content: '❌ This server is already set up!\n\n' +
+                'To modify existing settings, please use:\n' +
+                '`/changedefaults logschannel` - Change logs channel\n' +
+                '`/changedefaults botchannel` - Change bot commands channel\n' +
+                '`/changedefaults defaultrole` - Change default invite role'
+      });
+    }
+
     try {
       const guild = interaction.guild;
       const logsChannel = interaction.options.getChannel('logs');
@@ -31,7 +45,7 @@ module.exports = {
       // Check system messages channel
       const systemChannel = guild.systemChannel;
       if (!systemChannel) {
-        return await interaction.reply({
+        return await interaction.editReply({
           content: '❌ System Messages Channel is not set up! Please:\n' +
                   '1. Go to Server Settings\n' +
                   '2. Click on "Overview"\n' +
@@ -43,7 +57,7 @@ module.exports = {
       // Check if system messages are enabled
       const systemChannelFlags = guild.systemChannelFlags;
       if (systemChannelFlags.has('SuppressJoinNotifications')) {
-        return await interaction.reply({
+        return await interaction.editReply({
           content: '❌ Join Messages are disabled! Please:\n' +
                   '1. Go to Server Settings\n' +
                   '2. Click on "Overview"\n' +
@@ -73,19 +87,10 @@ module.exports = {
         `📢 System Messages Channel: ${systemChannel}`,
         defaultRole ? `🎭 Default Invite Role: ${defaultRole}` : null,
         '',
-        '**Admin Commands:**',
-        '`/setup` - Configure bot channels and settings',
-        '`/setinvites` - Set maximum invites for a role',
-        '`/addinvites` - Add invites to a user',
-        '`/removeinvites` - Remove invites from a user',
-        '`/changedefaults` - Change bot settings',
-        '**User Commands:**',
-        '`/createinvite` - Create a new invite link',
-        '`/invites` - View your invites and their status',
-        '`/deleteinvite` - Delete one of your invite links'
+        `Use \`/help\` in ${botChannel} to see all available commands.`
       ].filter(Boolean).join('\n');
 
-      await interaction.reply({ content: response });
+      await interaction.editReply({ content: response });
 
       // Send test messages
       await logsChannel.send('✅ Bot logging has been configured for this channel.');
@@ -93,8 +98,8 @@ module.exports = {
 
     } catch (error) {
       console.error('Error during setup:', error);
-      await interaction.reply({ 
-        content: 'There was an error completing the setup process.'
+      await interaction.editReply({
+        content: 'There was an error during setup.'
       });
     }
   }

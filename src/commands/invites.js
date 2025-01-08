@@ -106,7 +106,8 @@ module.exports = {
       if (isAdmin) {
         response += 'You have unlimited invites (Administrator)\n';
       } else if (userInvites.length > 0) {
-        response += `You have ${userInvites[0].totalInvitesRemaining} invites remaining\n`;
+        const inviteCount = userInvites[0].totalInvitesRemaining === -1 ? 'Unlimited' : userInvites[0].totalInvitesRemaining;
+        response += `You have ${inviteCount} invites remaining\n`;
       } else {
         response += 'You have 0 invites remaining\n';
       }

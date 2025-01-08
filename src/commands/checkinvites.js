@@ -76,7 +76,8 @@ module.exports = {
             if (isTargetAdmin) {
                 response += `${displayName} has unlimited invites (Administrator)\n`;
             } else if (userInvites.length > 0) {
-                response += `${displayName} has ${userInvites[0].totalInvitesRemaining} invites remaining\n`;
+                const inviteCount = userInvites[0].totalInvitesRemaining === -1 ? 'Unlimited' : userInvites[0].totalInvitesRemaining;
+                response += `${displayName} has ${inviteCount} invites remaining\n`;
             } else {
                 response += `${displayName} has 0 invites remaining\n`;
             }

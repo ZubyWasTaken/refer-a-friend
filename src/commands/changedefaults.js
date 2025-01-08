@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { ServerConfig } = require('../models/schemas');
 
 module.exports = {
@@ -13,6 +13,7 @@ module.exports = {
                 .addChannelOption(option =>
                     option.setName('channel')
                         .setDescription('The new logs channel')
+                        .addChannelTypes(ChannelType.GuildText)
                         .setRequired(true)
                 )
         )
@@ -23,6 +24,7 @@ module.exports = {
                 .addChannelOption(option =>
                     option.setName('channel')
                         .setDescription('The new bot commands channel')
+                        .addChannelTypes(ChannelType.GuildText)
                         .setRequired(true)
                 )
         )
@@ -42,6 +44,64 @@ module.exports = {
 
         try {
             const subcommand = interaction.options.getSubcommand();
+            
+            // Get current server config
+            const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+            if (!serverConfig) {
+                return await interaction.editReply({
+                    content: '❌ Server not set up! Please use `/setup` first.',
+                    flags: ['Ephemeral']
+                });
+            }
+
+            // Check if botchannel command is being used in the correct channel
+            if (subcommand === 'botchannel' && interaction.channelId !== serverConfig.bot_channel_id) {
+                const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
+                return await interaction.editReply({
+                    content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
+                    flags: ['Ephemeral']
+                });
+            }
+
+            // Check for same-value settings and role hierarchy
+            switch(subcommand) {
+                case 'botchannel': {
+                    const newChannel = interaction.options.getChannel('channel');
+                    if (newChannel.id === serverConfig.bot_channel_id) {
+                        return await interaction.editReply({
+                            content: `❌ ${newChannel} is already set as the bot commands channel.`
+                        });
+                    }
+                    break;
+                }
+                case 'logschannel': {
+                    const newChannel = interaction.options.getChannel('channel');
+                    if (newChannel.id === serverConfig.logs_channel_id) {
+                        return await interaction.editReply({
+                            content: `❌ ${newChannel} is already set as the logs channel.`
+                        });
+                    }
+                    break;
+                }
+                case 'defaultrole': {
+                    const newRole = interaction.options.getRole('role');
+                    if (newRole.id === serverConfig.default_invite_role) {
+                        return await interaction.editReply({
+                            content: `❌ ${newRole} is already set as the default invite role.`
+                        });
+                    }
+
+                    // Check if the role is higher than the bot's role
+                    const botRole = interaction.guild.members.me.roles.highest;
+                    if (newRole.position >= botRole.position) {
+                        return await interaction.editReply({
+                            content: `❌ I cannot assign the ${newRole} role as it is positioned higher than or equal to my highest role (${botRole}).`
+                        });
+                    }
+                    break;
+                }
+            }
+
             let updateData = {};
             let successMessage = '';
 

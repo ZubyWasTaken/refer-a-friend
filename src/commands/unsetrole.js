@@ -1,0 +1,86 @@
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Role, ServerConfig } = require('../models/schemas');
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('unsetrole')
+        .setDescription('Remove invite configuration from a role')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('The role to remove invite configuration from')
+                .setRequired(true)),
+
+    async execute(interaction) {
+        await interaction.deferReply({ flags: ['Ephemeral'] });
+
+        // Check if server is setup
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        if (!serverConfig) {
+            return await interaction.editReply({
+                content: '❌ Server not set up! Please use `/setup` first.',
+                flags: ['Ephemeral']
+            });
+        }
+
+        // Check if command is being used in the correct channel
+        if (interaction.channelId !== serverConfig.bot_channel_id) {
+            const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
+            return await interaction.editReply({
+                content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
+                flags: ['Ephemeral']
+            });
+        }
+
+        try {
+            // Get all configured roles first
+            const configuredRoles = await Role.find({ guild_id: interaction.guildId });
+            
+            if (configuredRoles.length === 0) {
+                return await interaction.editReply({
+                    content: '❌ There are no roles configured with invite limits.'
+                });
+            }
+
+            const selectedRole = interaction.options.getRole('role');
+            const roleConfig = await Role.findOne({
+                role_id: selectedRole.id,
+                guild_id: interaction.guildId
+            });
+
+            if (!roleConfig) {
+                // Create a list of configured roles to show the user
+                const configuredRolesList = configuredRoles
+                    .map(config => {
+                        const role = interaction.guild.roles.cache.get(config.role_id);
+                        const inviteLimit = config.max_invites === -1 ? 'Unlimited' : config.max_invites;
+                        return role ? `• ${role.name} (${inviteLimit} invites)` : null;
+                    })
+                    .filter(Boolean)
+                    .join('\n');
+
+                return await interaction.editReply({
+                    content: `❌ ${selectedRole} is not configured with any invite limits.\n\nConfigured roles:\n${configuredRolesList}`
+                });
+            }
+
+            // Delete the role configuration
+            await Role.findOneAndDelete({
+                role_id: selectedRole.id,
+                guild_id: interaction.guildId
+            });
+
+            await interaction.editReply({
+                content: `✅ Successfully removed invite configuration from role ${selectedRole}.\n\n` +
+                        `ℹ️ Note: This does not remove any invite balance from users. ` +
+                        `Use \`/removeinvites\` to modify user invite balances.`
+            });
+
+        } catch (error) {
+            console.error('Error unsetting role:', error);
+            await interaction.editReply({
+                content: 'There was an error removing the role configuration.'
+            });
+        }
+    }
+}; 

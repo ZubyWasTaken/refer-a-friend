@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, Collection } = require('discord.js');
-const { User, Role, Invite } = require('../models/schemas');
+const { User, Role, Invite, ServerConfig } = require('../models/schemas');
 const { initializeUser } = require('../utils/userManager');
 const { invitesCache } = require('../utils/inviteCache');
 
@@ -93,6 +93,41 @@ module.exports = {
         );
         
         await initializeUser(member.id, adminRole.id, interaction.guildId);
+      }
+
+      // Get all roles with invite configurations for this user
+      const userRoles = await User.find({
+        user_id: interaction.user.id,
+        guild_id: interaction.guildId
+      });
+
+      // Check if user has any roles with unlimited invites
+      const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
+
+      if (hasUnlimitedInvites) {
+        // If user has unlimited invites, create invite with default role
+        const invite = await interaction.channel.createInvite({
+          maxAge: 0, // Never expires
+          maxUses: 1, // One-time use
+          unique: true,
+        });
+
+        // Get the default role for this server
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+
+        // Store the invite in the database
+        await Invite.create({
+          invite_code: invite.code,
+          guild_id: interaction.guildId,
+          inviter_id: interaction.user.id,
+          role_id: defaultRole.id
+        });
+
+        return await interaction.editReply({
+          content: `✅ Created invite: ${invite.url}`,
+          flags: ['Ephemeral']
+        });
       }
 
       const invite = await interaction.channel.createInvite({
