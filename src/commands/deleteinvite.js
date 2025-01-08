@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { getDatabase } = require('../database/init');
+const { Invite, JoinTracking } = require('../models/schemas');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,40 +7,51 @@ module.exports = {
     .setDescription('Delete one of your invite links')
     .addIntegerOption(option =>
       option.setName('number')
-        .setDescription('The number of the invite to delete (check /invites for numbers)')
+        .setDescription('The number of the invite to delete (from /invites list)')
         .setRequired(true)),
 
   async execute(interaction) {
     await interaction.deferReply({ flags: ['Ephemeral'] });
-    const db = getDatabase();
 
     try {
       const inviteNumber = interaction.options.getInteger('number');
 
-      // Get user's invites in order
-      const userInvites = db.prepare(`
-        SELECT 
-          i.id,
-          i.link,
-          i.max_uses,
-          COUNT(jt.id) as times_used
-        FROM invites i
-        LEFT JOIN join_tracking jt ON i.id = jt.invite_id
-        WHERE i.user_id = ?
-        GROUP BY i.id
-      `).all(interaction.user.id);
+      // Get user's invites
+      const userInvites = await Invite.aggregate([
+        {
+          $match: {
+            user_id: interaction.user.id,
+            guild_id: interaction.guildId
+          }
+        },
+        {
+          $lookup: {
+            from: 'jointrackings',
+            localField: '_id',
+            foreignField: 'invite_id',
+            as: 'uses'
+          }
+        },
+        {
+          $project: {
+            link: 1,
+            max_uses: 1,
+            invite_code: 1,
+            times_used: { $size: '$uses' }
+          }
+        }
+      ]);
 
       if (inviteNumber < 1 || inviteNumber > userInvites.length) {
         return await interaction.editReply({
-          content: `Invalid invite number. You have ${userInvites.length} active invites.`,
-          flags: ['Ephemeral']
+          content: `Invalid invite number. You have ${userInvites.length} active invites.`
         });
       }
 
       const inviteToDelete = userInvites[inviteNumber - 1];
 
       // Delete the invite from Discord
-      const inviteCode = inviteToDelete.link.split('/').pop();
+      const inviteCode = inviteToDelete.invite_code;
       const guildInvites = await interaction.guild.invites.fetch();
       const discordInvite = guildInvites.find(inv => inv.code === inviteCode);
       if (discordInvite) {
@@ -48,27 +59,14 @@ module.exports = {
       }
 
       // Delete from database
-      db.prepare('DELETE FROM invites WHERE id = ?').run(inviteToDelete.id);
+      await Invite.findByIdAndDelete(inviteToDelete._id);
+      await JoinTracking.deleteMany({ invite_id: inviteToDelete._id });
 
-      // Log the deletion
-      await interaction.client.logger.logToChannel(interaction.guildId,
-        `🗑️ **Invite Deleted**\n` +
-        `Deleted by: ${interaction.user.tag}\n` +
-        `Link: ${inviteToDelete.link}\n` +
-        `Usage: ${inviteToDelete.times_used}/${inviteToDelete.max_uses}`
-      );
-
-      await interaction.editReply({
-        content: `Successfully deleted invite link #${inviteNumber}.`,
-        flags: ['Ephemeral']
-      });
+      await interaction.editReply(`Deleted invite: ${inviteToDelete.link}`);
 
     } catch (error) {
-      console.error('Error deleting invite:', error);
-      await interaction.editReply({
-        content: 'There was an error deleting the invite.',
-        flags: ['Ephemeral']
-      });
+      console.error('Error in deleteinvite:', error);
+      await interaction.editReply('There was an error deleting the invite.');
     }
   }
 }; 

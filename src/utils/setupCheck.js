@@ -1,28 +1,23 @@
-const { getDatabase } = require('../database/init');
+const { ServerConfig } = require('../models/schemas');
 
-async function isSetupComplete(guildId, channelId) {
-  const db = getDatabase();
-  
-  const config = db.prepare(`
-    SELECT * FROM server_config 
-    WHERE guild_id = ?
-  `).get(guildId);
-
-  if (!config || !config.setup_completed) {
-    return { 
-      completed: false, 
-      message: 'This bot has not been set up yet. An administrator needs to run `/setup` first.' 
-    };
-  }
-
-  if (channelId !== config.bot_channel_id) {
-    return { 
-      completed: false, 
-      message: `Bot commands can only be used in <#${config.bot_channel_id}>.` 
-    };
-  }
-
-  return { completed: true, config };
+async function isSetupComplete(guildId) {
+    try {
+        const config = await ServerConfig.findOne({ guild_id: guildId });
+        return config?.setup_completed || false;
+    } catch (error) {
+        console.error('Error checking setup status:', error);
+        return false;
+    }
 }
 
-module.exports = { isSetupComplete }; 
+async function getServerConfig(guildId) {
+    try {
+        const config = await ServerConfig.findOne({ guild_id: guildId });
+        return config || null;
+    } catch (error) {
+        console.error('Error getting server config:', error);
+        return null;
+    }
+}
+
+module.exports = { isSetupComplete, getServerConfig }; 

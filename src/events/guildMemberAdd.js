@@ -1,85 +1,71 @@
-const { Events } = require('discord.js');
-const { getDatabase } = require('../database/init');
 const { Collection } = require('discord.js');
+const { Invite, JoinTracking } = require('../models/schemas');
 
 module.exports = {
-    name: Events.GuildMemberAdd,
+    name: 'guildMemberAdd',
     async execute(member) {
-        const db = getDatabase();
-        
+        console.log(`Member joined: ${member.user.tag}`);
         try {
-            // Get the cached invites before the member joined
-            const oldInvites = member.client.invites.get(member.guild.id);
-            // Fetch new invites after the member joined
+            const cachedInvites = member.client.invites.get(member.guild.id);
             const newInvites = await member.guild.invites.fetch();
             
-            // Find the invite that was used by comparing uses
+            console.log('Cached invites:', Array.from(cachedInvites?.values() || []).map(inv => ({
+                code: inv.code,
+                uses: inv.uses
+            })));
+            console.log('New invites:', Array.from(newInvites.values()).map(inv => ({
+                code: inv.code,
+                uses: inv.uses
+            })));
+            
             let usedInvite = null;
             let usedInviteCode = null;
 
-            // Compare each invite in the new list with the old list
-            newInvites.forEach(newInv => {
-                const oldInv = oldInvites?.get(newInv.code);
-                if (oldInv && newInv.uses > oldInv.uses) {
-                    usedInvite = newInv;
-                    usedInviteCode = newInv.code;
-                }
-            });
-
-            // If we couldn't find it in the new invites (e.g., single-use invite), check the old invites
-            if (!usedInvite) {
-                oldInvites?.forEach(oldInv => {
-                    if (!newInvites.has(oldInv.code)) {
-                        usedInvite = oldInv;
-                        usedInviteCode = oldInv.code;
+            // For single-use invites, check which invite from our cache is missing in the new invites
+            if (cachedInvites) {
+                for (const [code, invite] of cachedInvites) {
+                    if (!newInvites.has(code)) {
+                        console.log(`Found used single-use invite: ${code}`);
+                        usedInvite = invite;
+                        usedInviteCode = code;
+                        break;
                     }
-                });
+                }
             }
+
+            // Update cache with only bot-created invites
+            const botInvites = newInvites.filter(invite => invite.inviterId === process.env.APPLICATION_ID);
+            member.client.invites.set(member.guild.id, new Collection(botInvites.map(invite => [invite.code, invite])));
 
             if (usedInviteCode) {
-                // Update the uses in our database
-                const inviteInfo = db.prepare(`
-                    SELECT i.*, u.user_id as creator_id
-                    FROM invites i
-                    JOIN users u ON i.user_id = u.user_id
-                    WHERE i.invite_code = ?
-                `).get(usedInviteCode);
+                console.log(`Processing invite: ${usedInviteCode}`);
+                const inviteInfo = await Invite.findOne({ 
+                    invite_code: usedInviteCode,
+                    guild_id: member.guild.id
+                });
 
                 if (inviteInfo) {
-                    // Store join in tracking table
-                    db.prepare(`
-                        INSERT INTO join_tracking (invite_id, joined_user_id)
-                        VALUES (?, ?)
-                    `).run(inviteInfo.id, member.id);
+                    await JoinTracking.create({
+                        invite_id: inviteInfo._id,
+                        guild_id: member.guild.id,
+                        joined_user_id: member.id
+                    });
 
-                    // Get the current use count
-                    const useCount = db.prepare(`
-                        SELECT COUNT(*) as count
-                        FROM join_tracking
-                        WHERE invite_id = ?
-                    `).get(inviteInfo.id).count;
-
-                    // Get inviter
-                    const inviter = await member.guild.members.fetch(inviteInfo.creator_id);
-
-                    // Log the join with updated use count
-                    await member.client.logger.logToChannel(member.guild.id,
-                        `👋 **New Member Joined**\n` +
-                        `Member: ${member.user.tag}\n` +
-                        `Invited by: ${inviter.user.tag}\n` +
-                        `Invite Code: ${usedInviteCode}\n` +
-                        `Uses: ${useCount}/${inviteInfo.max_uses || '∞'}`
-                    );
+                    try {
+                        const inviter = await member.guild.members.fetch(inviteInfo.user_id);
+                        await member.client.logger.logToChannel(member.guild.id,
+                            `👋 **New Member Joined**\n` +
+                            `Member: <@${member.id}>\n` +
+                            `Invited by: <@${inviter.id}>\n` +
+                            `Invite Code: ${usedInviteCode}`
+                        );
+                    } catch (error) {
+                        console.error('Error fetching inviter or sending log:', error);
+                    }
                 }
             }
-
-            // Update the cache with new invites
-            member.client.invites.set(member.guild.id, 
-                new Collection(newInvites.map(invite => [invite.code, invite]))
-            );
-
         } catch (error) {
-            console.error('Error tracking join:', error);
+            console.error('Error processing member join:', error);
         }
     }
 }; 

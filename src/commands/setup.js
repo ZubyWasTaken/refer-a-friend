@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { getDatabase } = require('../database/init');
+const { ServerConfig, Role } = require('../models/schemas');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,15 +15,18 @@ module.exports = {
       option.setName('botchannel')
         .setDescription('Channel where bot commands can be used')
         .addChannelTypes(ChannelType.GuildText)
-        .setRequired(true)),
+        .setRequired(true))
+    .addRoleOption(option =>
+      option.setName('defaultrole')
+        .setDescription('Role to give to users who join via invite (optional)')
+        .setRequired(false)),
 
   async execute(interaction) {
-    const db = getDatabase();
-    
     try {
       const guild = interaction.guild;
       const logsChannel = interaction.options.getChannel('logs');
       const botChannel = interaction.options.getChannel('botchannel');
+      const defaultRole = interaction.options.getRole('defaultrole');
       
       // Check system messages channel
       const systemChannel = guild.systemChannel;
@@ -33,8 +36,7 @@ module.exports = {
                   '1. Go to Server Settings\n' +
                   '2. Click on "Overview"\n' +
                   '3. Set a "System Messages Channel"\n' +
-                  '4. Enable "Show Join Messages"',
-          flags: ['Ephemeral']
+                  '4. Enable "Show Join Messages"'
         });
       }
 
@@ -45,17 +47,23 @@ module.exports = {
           content: '❌ Join Messages are disabled! Please:\n' +
                   '1. Go to Server Settings\n' +
                   '2. Click on "Overview"\n' +
-                  '3. Under "System Messages Channel", enable "Show Join Messages"',
-          flags: ['Ephemeral']
+                  '3. Under "System Messages Channel", enable "Show Join Messages"'
         });
       }
 
-      // Update or insert server config
-      db.prepare(`
-        INSERT OR REPLACE INTO server_config 
-        (guild_id, logs_channel_id, bot_channel_id, system_channel_id, setup_completed)
-        VALUES (?, ?, ?, ?, TRUE)
-      `).run(interaction.guildId, logsChannel.id, botChannel.id, systemChannel.id);
+      // Update or insert server config using MongoDB
+      await ServerConfig.findOneAndUpdate(
+        { guild_id: interaction.guildId },
+        {
+          guild_id: interaction.guildId,
+          logs_channel_id: logsChannel.id,
+          bot_channel_id: botChannel.id,
+          system_channel_id: systemChannel.id,
+          default_invite_role: defaultRole?.id || null,
+          setup_completed: true
+        },
+        { upsert: true, new: true }
+      );
 
       const response = [
         '🔧 **Bot Setup Complete**',
@@ -63,6 +71,7 @@ module.exports = {
         `📝 Logs Channel: ${logsChannel}`,
         `🤖 Bot Commands Channel: ${botChannel}`,
         `📢 System Messages Channel: ${systemChannel}`,
+        defaultRole ? `🎭 Default Invite Role: ${defaultRole}` : null,
         '',
         '**Admin Commands:**',
         '`/setup` - Configure bot channels and settings',
@@ -72,7 +81,7 @@ module.exports = {
         '`/createinvite` - Create a new invite link',
         '`/invites` - View your invites and their status',
         '`/deleteinvite` - Delete one of your invite links'
-      ].join('\n');
+      ].filter(Boolean).join('\n');
 
       await interaction.reply({ content: response });
 
@@ -83,8 +92,7 @@ module.exports = {
     } catch (error) {
       console.error('Error during setup:', error);
       await interaction.reply({ 
-        content: 'There was an error completing the setup process.',
-        ephemeral: true 
+        content: 'There was an error completing the setup process.'
       });
     }
   }

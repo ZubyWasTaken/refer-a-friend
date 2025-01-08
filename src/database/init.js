@@ -1,55 +1,48 @@
 require('dotenv').config();
-const Database = require('better-sqlite3');
+const mongoose = require('mongoose');
+const { User, Invite, Role, JoinTracking, ServerConfig } = require('../models/schemas');
 
-function initDatabase() {
-  const db = new Database(process.env.DATABASE_PATH);
+async function initDatabase() {
+    try {
+        // Connect to MongoDB with explicit database name
+        await mongoose.connect(process.env.MONGODB_URI, {
+            dbName: 'invite_manager'
+        });
+        console.log('Connected to MongoDB');
 
-  // Create tables if they don't exist
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS server_config (
-      guild_id TEXT PRIMARY KEY,
-      logs_channel_id TEXT NOT NULL,
-      bot_channel_id TEXT NOT NULL,
-      system_channel_id TEXT NOT NULL,
-      setup_completed BOOLEAN DEFAULT FALSE
-    );
+        // Create indexes for better query performance
+        await Promise.all([
+            // Server Config indexes
+            ServerConfig.collection.createIndex({ guild_id: 1 }, { unique: true }),
 
-    CREATE TABLE IF NOT EXISTS roles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      role_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      max_invites INTEGER NOT NULL
-    );
+            // Roles indexes
+            Role.collection.createIndex({ role_id: 1 }, { unique: true }),
 
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      role_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      invites_remaining INTEGER NOT NULL
-    );
+            // Users indexes
+            User.collection.createIndex({ user_id: 1, role_id: 1 }, { unique: true }),
 
-    CREATE TABLE IF NOT EXISTS invites (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      link TEXT NOT NULL,
-      invite_code TEXT NOT NULL,
-      max_uses INTEGER NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+            // Invites indexes
+            Invite.collection.createIndex({ invite_code: 1 }, { unique: true }),
+            Invite.collection.createIndex({ user_id: 1 }),
 
-    CREATE TABLE IF NOT EXISTS join_tracking (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invite_id INTEGER NOT NULL,
-      joined_user_id TEXT NOT NULL,
-      joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (invite_id) REFERENCES invites(id)
-    );
-  `);
+            // Join Tracking indexes
+            JoinTracking.collection.createIndex({ invite_id: 1 }),
+            JoinTracking.collection.createIndex({ joined_user_id: 1 })
+        ]);
 
-  return db;
+        console.log('Database initialized successfully');
+    } catch (error) {
+        if (error.code === 'IndexError') {
+            console.log('Indexes already exist, continuing...');
+        } else {
+            console.error('Error initializing database:', error);
+            process.exit(1);
+        }
+    }
 }
 
-module.exports = {
-  initDatabase,
-  getDatabase: () => new Database(process.env.DATABASE_PATH)
-}; 
+function getDatabase() {
+    return mongoose.connection;
+}
+
+module.exports = { initDatabase, getDatabase }; 

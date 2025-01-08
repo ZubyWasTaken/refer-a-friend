@@ -1,29 +1,38 @@
-const { getDatabase } = require('../database/init');
+const { User, Role } = require('../models/schemas');
 
-function initializeUser(userId, roleId) {
-    const db = getDatabase();
-    
-    // Check if user exists with this role
-    const existingUser = db.prepare(`
-        SELECT * FROM users 
-        WHERE user_id = ? AND role_id = ?
-    `).get(userId, roleId);
+async function initializeUser(userId, roleId, guildId) {
+    try {
+        if (!guildId) {
+            console.error('No guildId provided to initializeUser');
+            return;
+        }
 
-    if (!existingUser) {
-        // Get role's max_invites
-        const role = db.prepare(`
-            SELECT max_invites 
-            FROM roles 
-            WHERE role_id = ?
-        `).get(roleId);
+        // Get the role's max_invites
+        const role = await Role.findOne({ 
+            role_id: roleId,
+            guild_id: guildId
+        });
 
         if (role) {
-            // Add new user with full invites
-            db.prepare(`
-                INSERT INTO users (user_id, role_id, invites_remaining) 
-                VALUES (?, ?, ?)
-            `).run(userId, roleId, role.max_invites);
+            // Check if user already has invites for this role
+            const existingUser = await User.findOne({
+                user_id: userId,
+                role_id: roleId,
+                guild_id: guildId
+            });
+
+            if (!existingUser) {
+                // Create new user with role's max_invites
+                await User.create({
+                    user_id: userId,
+                    role_id: roleId,
+                    guild_id: guildId,
+                    invites_remaining: role.max_invites
+                });
+            }
         }
+    } catch (error) {
+        console.error('Error initializing user:', error);
     }
 }
 
