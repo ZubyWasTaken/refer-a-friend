@@ -12,7 +12,7 @@ module.exports = {
                 .setRequired(true)),
 
     async execute(interaction) {
-        await interaction.deferReply({ flags: ['Ephemeral'] });
+        await interaction.deferReply();
 
         // Check if server is setup
         const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });

@@ -126,15 +126,6 @@ client.on("interactionCreate", async (interaction) => {
   if (!command) return;
 
   try {
-    if (command.requiresSetup !== false) {
-      const setupComplete = await isSetupComplete(interaction.guildId);
-      if (!setupComplete && interaction.commandName !== "setup") {
-        return await interaction.reply({
-          content: "⚠️ Bot setup is not complete! Please run `/setup` first.",
-        });
-      }
-    }
-
     await command.execute(interaction);
   } catch (error) {
     console.error(error);

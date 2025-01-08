@@ -1,23 +1,40 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role } = require('../models/schemas');
+const { User, Role, ServerConfig } = require('../models/schemas');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('addinvites')
-        .setDescription('Add invites to a user (Admin only)')
+        .setDescription('Add invites to a user')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('The user to give invites to')
+                .setDescription('The user to add invites to')
                 .setRequired(true))
         .addIntegerOption(option =>
             option.setName('amount')
-                .setDescription('Number of invites to add')
-                .setRequired(true)
-                .setMinValue(1)),
+                .setDescription('Amount of invites to add')
+                .setRequired(true)),
 
     async execute(interaction) {
         await interaction.deferReply();
+
+        // Check if server is setup
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        if (!serverConfig) {
+            return await interaction.editReply({
+                content: '❌ Server not set up! Please use `/setup` first.',
+                flags: ['Ephemeral']
+            });
+        }
+
+        // Check if command is being used in the correct channel
+        if (interaction.channelId !== serverConfig.bot_channel_id) {
+            const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
+            return await interaction.editReply({
+                content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
+                flags: ['Ephemeral']
+            });
+        }
 
         try {
             const targetUser = interaction.options.getUser('user');

@@ -16,7 +16,9 @@ module.exports = {
         .setRequired(true)),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: ['Ephemeral'] });
+    await interaction.deferReply();
+
+    
     
     // Check if server is setup
     const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
@@ -32,14 +34,6 @@ module.exports = {
       const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
       return await interaction.editReply({
         content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
-        flags: ['Ephemeral']
-      });
-    }
-
-    // Check if user is an admin
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return await interaction.editReply({
-        content: 'You need Administrator permissions to use this command.',
         flags: ['Ephemeral']
       });
     }
@@ -114,15 +108,13 @@ module.exports = {
       }
 
       await interaction.editReply({
-        content: response,
-        flags: ['Ephemeral']
+        content: response
       });
 
     } catch (error) {
       console.error('Error setting role invites:', error);
       await interaction.editReply({
-        content: 'There was an error setting the role invites.',
-        flags: ['Ephemeral']
+        content: 'There was an error setting the role invites.'
       });
     }
   }

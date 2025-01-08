@@ -7,6 +7,16 @@ module.exports = {
     requiresSetup: false,
 
     async execute(interaction) {
+
+        // Check if server is setup
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        if (!serverConfig) {
+            return await interaction.editReply({
+                content: '❌ Server not set up! Contact a server administrator to set up the bot.',
+                flags: ['Ephemeral']
+            });
+        }
+
         const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
         const embed = new EmbedBuilder()
             .setColor(0x0099FF)

@@ -8,6 +8,23 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
+        // Check if server is setup
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        if (!serverConfig) {
+            return await interaction.editReply({
+                content: '❌ Server not set up! Contact a server administrator to set up the bot.',
+                flags: ['Ephemeral']
+            });
+        }
+        //check if command is being used in the correct channel
+        if (interaction.channelId !== serverConfig.bot_channel_id) {
+            const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
+            return await interaction.editReply({
+                content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
+                flags: ['Ephemeral']
+            });
+        }
+
         // Create confirmation button
         const confirmButton = new ButtonBuilder()
             .setCustomId('confirm_reset')

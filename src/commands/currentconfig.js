@@ -70,8 +70,7 @@ module.exports = {
         } catch (error) {
             console.error('Error showing config:', error);
             await interaction.reply({
-                content: 'There was an error fetching the server configuration.',
-                flags: ['Ephemeral']
+                content: 'There was an error fetching the server configuration.'
             });
         }
     }

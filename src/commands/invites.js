@@ -10,6 +10,15 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: ['Ephemeral'] });
 
+    // Check if server is setup
+    const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+    if (!serverConfig) {
+        return await interaction.editReply({
+            content: '❌ Server not set up! Contact a server administrator to set up the bot.',
+            flags: ['Ephemeral']
+        });
+    }
+
     try {
       const member = interaction.member;
       const roles = member.roles.cache;
