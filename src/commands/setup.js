@@ -8,12 +8,12 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addChannelOption(option =>
       option.setName('logs')
-        .setDescription('Channel for bot logs')
+        .setDescription('Channel where this bot\'s logs are sent')
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true))
     .addChannelOption(option =>
       option.setName('botchannel')
-        .setDescription('Channel where bot commands can be used')
+        .setDescription('Channel where this bot\'s commands can be used')
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true))
     .addRoleOption(option =>
@@ -76,7 +76,9 @@ module.exports = {
         '**Admin Commands:**',
         '`/setup` - Configure bot channels and settings',
         '`/setinvites` - Set maximum invites for a role',
-        '',
+        '`/addinvites` - Add invites to a user',
+        '`/removeinvites` - Remove invites from a user',
+        '`/changedefaults` - Change bot settings',
         '**User Commands:**',
         '`/createinvite` - Create a new invite link',
         '`/invites` - View your invites and their status',

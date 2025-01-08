@@ -22,6 +22,15 @@ client.invites = new Collection();
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
+  // Set the bot's presence
+  client.user.setPresence({
+    activities: [{ 
+      name: '/help for commands',
+      type: 3 // WATCHING
+    }],
+    status: 'online'
+  });
+
   // Initialize database
   await initDatabase();
 

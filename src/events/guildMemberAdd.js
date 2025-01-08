@@ -1,5 +1,5 @@
 const { Collection } = require('discord.js');
-const { Invite, JoinTracking } = require('../models/schemas');
+const { Invite, JoinTracking, ServerConfig } = require('../models/schemas');
 
 module.exports = {
     name: 'guildMemberAdd',
@@ -53,6 +53,23 @@ module.exports = {
 
                     try {
                         const inviter = await member.guild.members.fetch(inviteInfo.user_id);
+                        
+                        // Get server config and check for default invite role
+                        const serverConfig = await ServerConfig.findOne({ guild_id: member.guild.id });
+                        if (serverConfig?.default_invite_role) {
+                            try {
+                                await member.roles.add(serverConfig.default_invite_role);
+                                await member.client.logger.logToChannel(member.guild.id,
+                                    `🎭 Default invite role assigned to ${member.user.tag}`
+                                );
+                            } catch (error) {
+                                console.error('Error assigning default invite role:', error);
+                                await member.client.logger.logToChannel(member.guild.id,
+                                    `❌ Failed to assign default invite role to ${member.user.tag}: ${error.message}`
+                                );
+                            }
+                        }
+
                         await member.client.logger.logToChannel(member.guild.id,
                             `👋 **New Member Joined**\n` +
                             `Member: <@${member.id}>\n` +
