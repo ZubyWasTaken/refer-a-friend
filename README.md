@@ -65,7 +65,8 @@ A powerful Discord bot for managing server invites with role-based permissions, 
 4. Start the bot:
 
    ```bash
-   npm start
+   npm start # this will deploy the commands to discord and start the bot
+
    ```
 
 ## Required Bot Permissions
