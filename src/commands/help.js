@@ -44,6 +44,11 @@ module.exports = {
 • \`logschannel\` - Change where bot logs appear
 • \`botchannel\` - Change where commands can be used
 • \`defaultrole\` - Change/remove default invite role
+
+\`/currentconfig\` - View server configuration
+• See all configured channels
+• View role invite limits
+• Check current settings
                     `
                 },
                 {
@@ -52,6 +57,14 @@ module.exports = {
 \`/setinvites\` - Configure invite limits for roles
 • Set how many invites a role can create
 • Set unlimited invites for specific roles
+
+\`/setrole\` - Set role invite limits
+• Configure max invites for a role
+• Set unlimited invites (-1) for a role
+
+\`/unsetrole\` - Remove role configuration
+• Remove invite limits from a role
+• View configured roles list
 
 \`/addinvites\` - Give invites to users
 • Add invites to specific users
