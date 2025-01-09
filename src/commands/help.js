@@ -87,6 +87,7 @@ module.exports = {
 
 \`/deleteinvite\` - Remove a specific invite
 • Delete specific invite links
+• This does **NOT** refund you any invite credits
 
 \`/help\` - Show this help menu
 • View all available commands

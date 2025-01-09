@@ -192,8 +192,15 @@ module.exports = {
             }
         }
 
+        
+        await interaction.client.logger.logToChannel(interaction.guildId, 
+            `🎟️ **New Single-Use Invite Created**\n` +
+            `Created by: <@${interaction.user.id}>\n` +
+            `Link: ${invite.url}`
+        );
+        
         await interaction.editReply({
-          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`
+            content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`
         });
         return;
       }
@@ -237,17 +244,6 @@ module.exports = {
           { $inc: { invites_remaining: -1 } }
         );
       }
-
-      await interaction.client.logger.logToChannel(interaction.guildId, 
-        `🎟️ **New Single-Use Invite Created**\n` +
-        `Created by: <@${interaction.user.id}>\n` +
-        `Link: ${invite.url}`
-      );
-
-      await interaction.editReply({
-        content: `Created single-use invite link: ${invite.url}`,
-        flags: ['Ephemeral']
-      });
 
     } catch (error) {
       console.error('Error in createinvite:', error);

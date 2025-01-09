@@ -57,22 +57,25 @@ module.exports = {
             }, null);
 
             if (roleToUpdate) {
-                await User.findOneAndUpdate(
+                // Update user's invites and get the updated document
+                const updatedUser = await User.findOneAndUpdate(
                     { _id: roleToUpdate._id },
-                    { $inc: { invites_remaining: amount } }
+                    { $inc: { invites_remaining: amount } },
+                    { new: true }  // This returns the updated document
                 );
 
                 await interaction.editReply({
                     content: `✅ Successfully added ${amount} invites to ${targetUser}.`,
                     flags: ['Ephemeral']
                 });
-                 // Log the action
+
+                // Log the action with the correct updated value
                 await interaction.client.logger.logToChannel(interaction.guildId,
                     `🎟️ **Invite Added**\n` +
-                    `Admin: ${interaction.user.tag}\n` +
-                    `User: ${targetUser.tag}\n` +
+                    `Admin: <@${interaction.user.id}>\n` +
+                    `User: <@${targetUser.id}>\n` +
                     `Amount: +${amount}\n` +
-                    `New Total: ${userRoles.invites_remaining}`
+                    `New Total: ${updatedUser.invites_remaining}`
                 );
             } else {
                 await interaction.editReply({

@@ -9,10 +9,35 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
-        await interaction.deferReply();
+        await interaction.deferReply(); 
 
-        const serverConfig = await checkRequirements(interaction);
-        if (!serverConfig) return;  // Exit if checks failed    
+        // Get logging channel before deleting config
+        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+
+        // After checking serverConfig but before creating confirmation buttons
+        if (!serverConfig) {
+            return await interaction.editReply({
+                content: '❌ This server is not set up for invite management.\n' +
+                        'Please contact a server administrator for assistance.',
+                flags: ['Ephemeral']
+            });
+        }
+
+        // Check if logs channel exists but don't block the reset
+        let hasValidLogsChannel = false;
+        if (serverConfig.logs_channel_id) {
+            try {
+                const logsChannel = await interaction.guild.channels.fetch(serverConfig.logs_channel_id);
+                hasValidLogsChannel = !!logsChannel;
+            } catch (error) {
+                if (error.code === 10003) { // Unknown Channel error
+                    console.log('Logs channel not found, continuing without logging');
+                } else {
+                    console.error('Error checking logs channel:', error);
+                }
+                hasValidLogsChannel = false;
+            }
+        }
 
         // Create confirmation button
         const confirmButton = new ButtonBuilder()
@@ -96,8 +121,8 @@ module.exports = {
                     components: []
                 });
 
-                // Try to log to channel if it still exists
-                if (logsChannelId) {
+                // Only try to log if we have a valid channel
+                if (hasValidLogsChannel && logsChannelId) {
                     try {
                         const logsChannel = await interaction.guild.channels.fetch(logsChannelId);
                         if (logsChannel) {

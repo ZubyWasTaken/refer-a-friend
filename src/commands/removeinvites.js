@@ -90,14 +90,14 @@ module.exports = {
             // Log the action
             await interaction.client.logger.logToChannel(interaction.guildId,
                 `🎟️ **Invites Removed**\n` +
-                `Admin: ${interaction.user.tag}\n` +
-                `User: ${targetUser.tag}\n` +
+                `Admin: <@${interaction.user.id}>\n` +
+                `User: <@${targetUser.id}>\n` +
                 `Amount: -${amount}\n` +
                 `New Total: ${updatedUser.invites_remaining}`
             );
 
             await interaction.editReply({
-                content: `✅ Removed ${amount} invites from ${targetUser.tag}.\n` +
+                content: `✅ Removed ${amount} invites from <@${targetUser.id}>.\n` +
                         `They now have ${updatedUser.invites_remaining} invites remaining.`
             });
 

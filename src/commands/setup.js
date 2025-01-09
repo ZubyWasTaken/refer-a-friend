@@ -100,9 +100,10 @@ module.exports = {
       console.error('Error during setup:', error);
       await interaction.editReply({
         content: 'There was an error during setup.\n' +
+                'The bot has access to the logs channel, system messages channel, and the bot commands channel.' +
                 'Ensure the bot has the necessary permissions: ' +
-                'Manage Channels, Manage Roles, Send Messages, View Channels, Read Message History, Create Invite' +
-                'and that the refer-a-friend role is the highest possible role in the server.'
+                'View Audit Log, Manage Server, Manage Roles, Manage Channels, Create Invite, View Channels, Send Messages, Send Messages in Threads, Embed Links, Read Message History, Use Slash Commands' +
+                'and that the Refer-a-Friend role is the highest possible role in the server.'
       });
     }
   }
