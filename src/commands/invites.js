@@ -5,7 +5,7 @@ const { initializeUser } = require('../utils/userManager');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('invites')
-    .setDescription('Check your remaining invites and view your active invite links'),
+    .setDescription('Check your remaining invite balance and view your active invite links'),
 
   async execute(interaction) {
     await interaction.deferReply({ flags: ['Ephemeral'] });
@@ -78,13 +78,8 @@ module.exports = {
                 invite_code: { $in: invalidInvites.map(inv => inv.invite_code) },
                 guild_id: interaction.guildId
             });
-            console.log(`Cleaned up ${invalidInvites.length} invalid invites from database`);
         }
 
-        // Debug logs
-        console.log('User ID:', member.id);
-        console.log('Guild ID:', interaction.guildId);
-        console.log('Active invites found:', activeInvites);
 
         // Calculate total remaining invites
         const totalInvites = userInvites.reduce((sum, role) => 

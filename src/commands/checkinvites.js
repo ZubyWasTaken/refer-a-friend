@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, ServerConfig, Invite } = require('../models/schemas');
+const { User, Invite } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {

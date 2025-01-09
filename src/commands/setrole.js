@@ -9,12 +9,13 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addRoleOption(option =>
       option.setName('role')
-        .setDescription('The role to set invites for')
+        .setDescription('The role to set invite limits for')
         .setRequired(true))
     .addIntegerOption(option =>
       option.setName('maxinvites')
-        .setDescription('Maximum number of invites (-1 for unlimited)')
-        .setRequired(true)),
+        .setDescription('Maximum number of invites this role grants (-1 for unlimited)')
+        .setRequired(true)
+        .setMinValue(-1)),
 
   async execute(interaction) {
     await interaction.deferReply();
@@ -24,6 +25,13 @@ module.exports = {
 
     const role = interaction.options.getRole('role');
     const maxInvites = interaction.options.getInteger('maxinvites');
+
+    // Add validation for maxInvites
+    if (maxInvites < -1 || maxInvites === 0) {
+        return await interaction.editReply({
+            content: '❌ Maximum invites cannot be less than -1 or 0.\nUse -1 for unlimited invites or a positive number above 0 for a limited amount.'
+        });
+    }
 
     try {
       // Update or create role in database

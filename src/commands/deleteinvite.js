@@ -44,7 +44,6 @@ module.exports = {
       try {
         // Fetch fresh list of guild invites
         const guildInvites = await interaction.guild.invites.fetch();
-        console.log('Found guild invites:', guildInvites.map(inv => inv.code).join(', '));
         
         const discordInvite = guildInvites.get(inviteToDelete.invite_code);
         
@@ -54,7 +53,6 @@ module.exports = {
                 // Force fetch the specific invite to ensure it's fresh
                 const freshInvite = await interaction.guild.invites.fetch(inviteToDelete.invite_code);
                 await freshInvite.delete('User requested deletion');
-                console.log(`Successfully deleted Discord invite: ${inviteToDelete.invite_code}`);
             } catch (deleteError) {
                 console.error(`Error deleting invite:`, deleteError);
                 if (deleteError.code === 10006) {
@@ -72,7 +70,6 @@ module.exports = {
         const guildInvitesCache = interaction.client.invites.get(interaction.guildId);
         if (guildInvitesCache) {
             guildInvitesCache.delete(inviteToDelete.invite_code);
-            console.log(`Removed invite ${inviteToDelete.invite_code} from cache`);
         }
 
         // Delete from database

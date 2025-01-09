@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role, ServerConfig } = require('../models/schemas');
+const { User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
@@ -9,11 +9,11 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')
-                .setDescription('The user to add invites to')
+                .setDescription('The user to give invites to')
                 .setRequired(true))
         .addIntegerOption(option =>
             option.setName('amount')
-                .setDescription('Amount of invites to add')
+                .setDescription('Amount of invites to give')
                 .setRequired(true)),
 
     async execute(interaction) {

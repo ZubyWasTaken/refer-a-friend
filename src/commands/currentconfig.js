@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { ServerConfig, Role } = require('../models/schemas');
+const { Role } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {

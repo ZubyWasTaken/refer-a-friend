@@ -5,11 +5,11 @@ const checkRequirements = require('../utils/checkRequirements');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('unsetrole')
-        .setDescription('Remove invite configuration from a role')
+        .setDescription('Remove invite limits from a role')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addRoleOption(option =>
             option.setName('role')
-                .setDescription('The role to remove invite configuration from')
+                .setDescription('The role to remove invite limits from')
                 .setRequired(true)),
 
     async execute(interaction) {

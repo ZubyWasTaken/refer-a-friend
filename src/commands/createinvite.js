@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, Collection } = require('discord.js');
 const { User, Role, Invite, ServerConfig } = require('../models/schemas');
 const { initializeUser } = require('../utils/userManager');
-const { invitesCache } = require('../utils/inviteCache');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -211,12 +210,6 @@ module.exports = {
         unique: true
       });
 
-      console.log('Created invite:', {
-        code: invite.code,
-        maxUses: requestedUses,
-        url: invite.url
-      });
-
       await Invite.create({
         invite_code: invite.code,
         guild_id: interaction.guildId,
@@ -228,10 +221,8 @@ module.exports = {
       const guildInvites = interaction.client.invites.get(interaction.guildId);
       if (guildInvites) {
         guildInvites.set(invite.code, invite);
-        console.log(`Added invite ${invite.code} to cache. New cache size: ${guildInvites.size}`);
       } else {
         interaction.client.invites.set(interaction.guildId, new Collection([[invite.code, invite]]));
-        console.log(`Created new cache for guild with invite ${invite.code}`);
       }
 
       if (!isAdmin && highestInviteRole && highestInviteRole.max_invites !== -1) {
