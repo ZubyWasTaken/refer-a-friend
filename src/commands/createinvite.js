@@ -140,7 +140,6 @@ module.exports = {
 
         // Get the default role for this server
         const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-        const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
 
         // Create the invite
         const invite = await interaction.channel.createInvite({
@@ -149,12 +148,13 @@ module.exports = {
           unique: true,
         });
 
-        // Store the invite in the database
+        // Store the invite in the database with correct fields
         await Invite.create({
           invite_code: invite.code,
           guild_id: interaction.guildId,
-          inviter_id: interaction.user.id,
-          role_id: defaultRole.id
+          user_id: interaction.user.id,
+          link: invite.url,
+          max_uses: 1
         });
 
         // Decrement one invite from the role with remaining invites
@@ -172,8 +172,17 @@ module.exports = {
           }
         }
 
+        // Customize message based on whether default role exists and is valid
+        let roleMessage = '';
+        if (serverConfig?.default_invite_role) {
+            const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+            if (defaultRole) {
+                roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
+            }
+        }
+
         await interaction.editReply({
-          content: `✅ Created invite: ${invite.url}\nYou have ${totalInvites - 1} invites remaining.`
+          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.`
         });
         return;
       }
@@ -191,10 +200,10 @@ module.exports = {
       });
 
       await Invite.create({
-        user_id: member.id,
-        guild_id: interaction.guildId,
-        link: invite.url,
         invite_code: invite.code,
+        guild_id: interaction.guildId,
+        user_id: interaction.user.id,
+        link: invite.url,
         max_uses: requestedUses
       });
 
@@ -220,7 +229,7 @@ module.exports = {
 
       await interaction.client.logger.logToChannel(interaction.guildId, 
         `🎟️ **New Single-Use Invite Created**\n` +
-        `Created by: ${interaction.user.tag}\n` +
+        `Created by: <@${interaction.user.id}>\n` +
         `Link: ${invite.url}`
       );
 

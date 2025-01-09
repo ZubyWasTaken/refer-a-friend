@@ -8,6 +8,7 @@ module.exports = {
     requiresSetup: false,
 
     async execute(interaction) {
+        await interaction.deferReply({flags: ['Ephemeral'] });
 
         // Check if server is setup
         const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
@@ -67,7 +68,7 @@ Made by [Zuby](https://imzuby.straw.page/)
             embed.setDescription('Here are all commands available to you.');
         }
 
-        await interaction.reply({ 
+        await interaction.editReply({ 
             embeds: [embed], 
             flags: ['Ephemeral']
         });

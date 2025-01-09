@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { ServerConfig, Role } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -8,24 +9,12 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
-        try {
-            const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-            
-            if (!serverConfig) {
-                return await interaction.reply({
-                    content: '❌ Server not set up! Please use `/setup` first.',
-                    flags: ['Ephemeral']
-                });
-            }
+        await interaction.deferReply();
 
-            // Check if command is being used in the correct channel
-            if (interaction.channelId !== serverConfig.bot_channel_id) {
-                const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
-                return await interaction.reply({
-                    content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
-                    flags: ['Ephemeral']
-                });
-            }
+        const serverConfig = await checkRequirements(interaction);
+        if (!serverConfig) return;  // Exit if checks failed
+
+        try {
 
             const logsChannel = interaction.guild.channels.cache.get(serverConfig.logs_channel_id);
             const botChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
@@ -65,11 +54,11 @@ module.exports = {
                        `\`/changedefaults defaultrole\` - Change default invite role\n` +
                        `\`/setinvites\` - Modify role invite limits`;
 
-            await interaction.reply({ content: response });
+            await interaction.editReply({ content: response });
 
         } catch (error) {
             console.error('Error showing config:', error);
-            await interaction.reply({
+            await interaction.editReply({
                 content: 'There was an error fetching the server configuration.'
             });
         }

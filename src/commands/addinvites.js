@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { User, Role, ServerConfig } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,23 +19,8 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply();
 
-        // Check if server is setup
-        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-        if (!serverConfig) {
-            return await interaction.editReply({
-                content: '❌ Server not set up! Please use `/setup` first.',
-                flags: ['Ephemeral']
-            });
-        }
-
-        // Check if command is being used in the correct channel
-        if (interaction.channelId !== serverConfig.bot_channel_id) {
-            const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
-            return await interaction.editReply({
-                content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
-                flags: ['Ephemeral']
-            });
-        }
+        const serverConfig = await checkRequirements(interaction);
+        if (!serverConfig) return;  // Exit if checks failed
 
         try {
             const targetUser = interaction.options.getUser('user');

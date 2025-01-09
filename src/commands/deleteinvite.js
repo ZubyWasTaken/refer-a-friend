@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { Invite, JoinTracking } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,54 +12,19 @@ module.exports = {
         .setRequired(true)),
 
   async execute(interaction) {
-    await interaction.deferReply();
+    await interaction.deferReply({ flags: ['Ephemeral'] });
 
-    // Check if server is setup
-    const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-    if (!serverConfig) {
-        return await interaction.editReply({
-            content: '❌ Server not set up! Please use `/setup` first.',
-            flags: ['Ephemeral']
-        });
-    }
-
-    // Check if command is being used in the correct channel
-    if (interaction.channelId !== serverConfig.bot_channel_id) {
-        const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
-        return await interaction.editReply({
-            content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
-            flags: ['Ephemeral']
-        });
-    }
+    const serverConfig = await checkRequirements(interaction);
+    if (!serverConfig) return;  // Exit if checks failed
 
     try {
       const inviteNumber = interaction.options.getInteger('number');
 
       // Get user's invites
-      const userInvites = await Invite.aggregate([
-        {
-          $match: {
-            user_id: interaction.user.id,
-            guild_id: interaction.guildId
-          }
-        },
-        {
-          $lookup: {
-            from: 'jointrackings',
-            localField: '_id',
-            foreignField: 'invite_id',
-            as: 'uses'
-          }
-        },
-        {
-          $project: {
-            link: 1,
-            max_uses: 1,
-            invite_code: 1,
-            times_used: { $size: '$uses' }
-          }
-        }
-      ]);
+      const userInvites = await Invite.find({
+        user_id: interaction.user.id,
+        guild_id: interaction.guildId
+      });
 
       if (inviteNumber < 1 || inviteNumber > userInvites.length) {
         return await interaction.editReply({
@@ -68,23 +34,35 @@ module.exports = {
 
       const inviteToDelete = userInvites[inviteNumber - 1];
 
-      // Delete the invite from Discord
-      const inviteCode = inviteToDelete.invite_code;
-      const guildInvites = await interaction.guild.invites.fetch();
-      const discordInvite = guildInvites.find(inv => inv.code === inviteCode);
-      if (discordInvite) {
-        await discordInvite.delete();
+      // Try to delete the invite from Discord
+      try {
+        const inviteCode = inviteToDelete.invite_code;
+        const guildInvites = await interaction.guild.invites.fetch();
+        const discordInvite = guildInvites.find(inv => inv.code === inviteCode);
+        if (discordInvite) {
+          await discordInvite.delete();
+        }
+      } catch (discordError) {
+        console.log('Discord invite already deleted or invalid:', discordError.code);
+        // Continue with database cleanup even if Discord invite is gone
       }
 
       // Delete from database
-      await Invite.findByIdAndDelete(inviteToDelete._id);
-      await JoinTracking.deleteMany({ invite_id: inviteToDelete._id });
+      await Invite.findOneAndDelete({
+        invite_code: inviteToDelete.invite_code,
+        guild_id: interaction.guildId
+      });
 
-      await interaction.editReply(`Deleted invite: ${inviteToDelete.link}`);
+      await interaction.editReply({
+        content: `✅ Deleted invite: ${inviteToDelete.link}`
+      });
 
     } catch (error) {
       console.error('Error in deleteinvite:', error);
-      await interaction.editReply('There was an error deleting the invite.');
+      await interaction.editReply({
+        content: '❌ There was an error deleting the invite.',
+        flags: ['Ephemeral']
+      });
     }
   }
 }; 

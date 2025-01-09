@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { User, Role, Invite, JoinTracking, ServerConfig } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,25 +11,8 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply();
 
-        // Check if server is setup
-        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-        if (!serverConfig) {
-        await interaction.deleteReply();
-        return await interaction.followUp({
-            content: '❌ Server not set up! Please use `/setup` first.',
-            flags: ['Ephemeral']
-        });
-        }
-
-        // Check if command is being used in the correct channel
-        if (interaction.channelId !== serverConfig.bot_channel_id) {
-        const correctChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
-        await interaction.deleteReply();
-        return await interaction.followUp({
-            content: `❌ This command can only be used in ${correctChannel}.\nPlease try again in the correct channel.`,
-            flags: ['Ephemeral']
-        });
-        }
+        const serverConfig = await checkRequirements(interaction);
+        if (!serverConfig) return;  // Exit if checks failed    
 
         // Create confirmation button
         const confirmButton = new ButtonBuilder()
@@ -44,7 +28,7 @@ module.exports = {
         const row = new ActionRowBuilder()
             .addComponents(confirmButton, cancelButton);
 
-        const response = await interaction.reply({
+        const response = await interaction.editReply({
             content: '⚠️ **WARNING: This action cannot be undone!**\n\n' +
                     'This will delete:\n' +
                     '• All invite configurations\n' +

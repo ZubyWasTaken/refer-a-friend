@@ -87,7 +87,7 @@ module.exports = {
         `📢 System Messages Channel: ${systemChannel}`,
         defaultRole ? `🎭 Default Invite Role: ${defaultRole}` : null,
         '',
-        `Use \`/help\` anywhere in the server to see all available commands.`
+        `\nUse \`/help\` anywhere in the server to see all available commands.`
       ].filter(Boolean).join('\n');
 
       await interaction.editReply({ content: response });
