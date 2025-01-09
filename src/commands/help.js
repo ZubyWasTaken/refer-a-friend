@@ -10,14 +10,14 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply({flags: ['Ephemeral'] });
 
-        // Check if server is setup
-        const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-        if (!serverConfig) {
-            return await interaction.editReply({
-                content: '❌ Server not set up! Contact a server administrator to set up the bot.',
-                flags: ['Ephemeral']
-            });
-        }
+        // // Check if server is setup
+        // const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+        // if (!serverConfig) {
+        //     return await interaction.editReply({
+        //         content: '❌ Server not set up! Contact a server administrator to set up the bot.',
+        //         flags: ['Ephemeral']
+        //     });
+        // }
 
         const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
         const embed = new EmbedBuilder()
@@ -110,9 +110,9 @@ module.exports = {
 
         // Add description based on user type
         if (isAdmin) {
-            embed.setDescription('Here are all available commands, including admin commands.\nCommands are grouped by function for easier reference.');
+            embed.setDescription('All available commands, including admin commands.\n**Note:** The bot must be set up using \`/setup\` to use any commands except \`/help\`');
         } else {
-            embed.setDescription('Here are all commands available to you.\nEach command includes its basic functions and usage.');
+            embed.setDescription('All available commands.\n**Note:** The admin must set up the bot to use any commands except \`/help\`');
         }
 
         embed.addFields({
