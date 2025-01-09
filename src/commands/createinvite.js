@@ -191,17 +191,18 @@ module.exports = {
             }
         }
 
-        
+        // First send the log message
         await interaction.client.logger.logToChannel(interaction.guildId, 
             `🎟️ **New Single-Use Invite Created**\n` +
             `Created by: <@${interaction.user.id}>\n` +
             `Link: ${invite.url}`
         );
-        
-        await interaction.editReply({
-            content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`
+
+        // Then send the reply and make sure to return
+        return interaction.editReply({
+            content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`,
+            flags: ['Ephemeral']
         });
-        return;
       }
 
       const invite = await interaction.channel.createInvite({
@@ -235,6 +236,28 @@ module.exports = {
           { $inc: { invites_remaining: -1 } }
         );
       }
+
+      // Log the action
+      await interaction.client.logger.logToChannel(interaction.guildId,
+          `🎟️ **New Single-Use Invite Created**\n` +
+          `Created by: <@${interaction.user.id}>\n` +
+          `Link: ${invite.url}`
+      );
+
+      // Get role message
+      let roleMessage = '';
+      if (serverConfig?.default_invite_role) {
+          const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+          if (defaultRole) {
+              roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
+          }
+      }
+
+      // Final reply for unlimited invites case
+      return await interaction.editReply({
+          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have unlimited invites remaining.\nUse \`/invites\` to see your active invites.`,
+          flags: ['Ephemeral']
+      });
 
     } catch (error) {
       console.error('Error in createinvite:', error);

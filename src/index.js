@@ -19,6 +19,9 @@ const client = new Client({
 // Initialize invite cache
 client.invites = new Collection();
 
+// Add this near the top where you initialize other client properties
+client.recentlyDeletedInvites = new Collection();
+
 // Fetch and cache invites when bot joins a guild or starts up
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -93,6 +96,16 @@ client.on("inviteDelete", async (invite) => {
         });
 
         if (inviteToDelete) {
+            // Store ALL the invite info before deleting
+            client.recentlyDeletedInvites.set(invite.guild.id, {
+                code: invite.code,
+                timestamp: Date.now(),
+                guildId: invite.guild.id,
+                _id: inviteToDelete._id,
+                user_id: inviteToDelete.user_id,
+                link: inviteToDelete.link
+            });
+
             // Remove from database
             await Invite.deleteOne({
                 invite_code: invite.code,
@@ -101,13 +114,13 @@ client.on("inviteDelete", async (invite) => {
 
             console.log(`Database invite deleted: ${invite.code}`);
 
-            // Log the deletion
-            await client.logger.logToChannel(invite.guild.id,
-                `🗑️ **Invite Deleted**\n` +
-                `Invite Code: \`${invite.code}\`\n` +
-                `Originally Created By: <@${inviteToDelete.user_id}>\n` +
-                `Link: ${inviteToDelete.link}`
-            );
+            // // Log the deletion
+            // await client.logger.logToChannel(invite.guild.id,
+            //     `🗑️ **Invite Deleted**\n` +
+            //     `Invite Code: \`${invite.code}\`\n` +
+            //     `Originally Created By: <@${inviteToDelete.user_id}>\n` +
+            //     `Link: ${inviteToDelete.link}`
+            // );
         }
 
         // Remove from cache if it exists

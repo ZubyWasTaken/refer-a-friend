@@ -20,16 +20,76 @@ module.exports = {
             
             let usedInvite = null;
             let usedInviteCode = null;
+            let inviteInfo = null;
 
-            // For single-use invites, check which invite from our cache is missing in the new invites
-            if (cachedInvites) {
+            // Check the invite delete event log for the most recent deletion
+            const recentlyDeletedInvite = member.client.recentlyDeletedInvites?.get(member.guild.id);
+            if (recentlyDeletedInvite && Date.now() - recentlyDeletedInvite.timestamp < 5000) { // within 5 seconds
+                console.log('Found recently deleted invite:', recentlyDeletedInvite);
+                usedInviteCode = recentlyDeletedInvite.code;
+                inviteInfo = recentlyDeletedInvite;
+            }
+
+            // If we didn't find a recently deleted invite, check for missing invites
+            if (!usedInviteCode && cachedInvites) {
                 for (const [code, invite] of cachedInvites) {
                     if (!newInvites.has(code)) {
                         console.log(`Found used single-use invite: ${code}`);
-                        usedInvite = invite;
                         usedInviteCode = code;
-                        break;
+                        inviteInfo = await Invite.findOne({ 
+                            invite_code: code,
+                            guild_id: member.guild.id
+                        });
+                        if (inviteInfo) break;
                     }
+                }
+            }
+
+            // If we found an invite, process it
+            if (inviteInfo) {
+                console.log('Processing invite info:', inviteInfo);
+
+                try {
+                    // Create join tracking record first
+                    const tracking = await JoinTracking.create({
+                        invite_id: inviteInfo._id,
+                        guild_id: member.guild.id,
+                        joined_user_id: member.id
+                    });
+                    console.log('Created join tracking:', tracking);
+
+                    // Then log the join
+                    await member.client.logger.logToChannel(member.guild.id,
+                        `👋 **New Member Joined**\n` +
+                        `Member: <@${member.id}>\n` +
+                        `Invited by: <@${inviteInfo.user_id}>\n` +
+                        `Invite Code: ${usedInviteCode}`
+                    );
+
+                    // // Then log the invite usage
+                    // await member.client.logger.logToChannel(member.guild.id,
+                    //     `🗑️ **Invite Used**\n` +
+                    //     `Invite Code: \`${usedInviteCode}\`\n` +
+                    //     `Originally Created By: <@${inviteInfo.user_id}>\n` +
+                    //     `Link: ${inviteInfo.link}`
+                    // );
+
+                    // Check for default role assignment
+                    const serverConfig = await ServerConfig.findOne({ guild_id: member.guild.id });
+                    if (serverConfig?.default_invite_role) {
+                        try {
+                            await member.roles.add(serverConfig.default_invite_role);
+                        } catch (error) {
+                            console.error('Error assigning default invite role:', error);
+                            await member.client.logger.logToChannel(member.guild.id,
+                                `❌ Failed to assign default invite role to ${member.user.tag}: ${error.message}`
+                            );
+                        }
+                    }
+
+                } catch (error) {
+                    console.error('Error in join tracking:', error);
+                    console.error('Invite info:', inviteInfo);
                 }
             }
 
@@ -37,50 +97,6 @@ module.exports = {
             const botInvites = newInvites.filter(invite => invite.inviterId === process.env.APPLICATION_ID);
             member.client.invites.set(member.guild.id, new Collection(botInvites.map(invite => [invite.code, invite])));
 
-            if (usedInviteCode) {
-                console.log(`Processing invite: ${usedInviteCode}`);
-                const inviteInfo = await Invite.findOne({ 
-                    invite_code: usedInviteCode,
-                    guild_id: member.guild.id
-                });
-
-                if (inviteInfo) {
-                    await JoinTracking.create({
-                        invite_id: inviteInfo._id,
-                        guild_id: member.guild.id,
-                        joined_user_id: member.id
-                    });
-
-                    try {
-                        const inviter = await member.guild.members.fetch(inviteInfo.user_id);
-                        
-                        // Get server config and check for default invite role
-                        const serverConfig = await ServerConfig.findOne({ guild_id: member.guild.id });
-                        if (serverConfig?.default_invite_role) {
-                            try {
-                                await member.roles.add(serverConfig.default_invite_role);
-                                await member.client.logger.logToChannel(member.guild.id,
-                                    `🎭 Default invite role assigned to ${member.user.tag}`
-                                );
-                            } catch (error) {
-                                console.error('Error assigning default invite role:', error);
-                                await member.client.logger.logToChannel(member.guild.id,
-                                    `❌ Failed to assign default invite role to ${member.user.tag}: ${error.message}`
-                                );
-                            }
-                        }
-
-                        await member.client.logger.logToChannel(member.guild.id,
-                            `👋 **New Member Joined**\n` +
-                            `Member: <@${member.id}>\n` +
-                            `Invited by: <@${inviter.id}>\n` +
-                            `Invite Code: ${usedInviteCode}`
-                        );
-                    } catch (error) {
-                        console.error('Error fetching inviter or sending log:', error);
-                    }
-                }
-            }
         } catch (error) {
             console.error('Error processing member join:', error);
         }
