@@ -68,7 +68,7 @@ module.exports = {
                 });
                  // Log the action
                 await interaction.client.logger.logToChannel(interaction.guildId,
-                    `🎟️ **Invites Added**\n` +
+                    `🎟️ **Invite Added**\n` +
                     `Admin: ${interaction.user.tag}\n` +
                     `User: ${targetUser.tag}\n` +
                     `Amount: +${amount}\n` +

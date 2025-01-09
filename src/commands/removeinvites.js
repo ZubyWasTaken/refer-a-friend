@@ -5,7 +5,7 @@ const checkRequirements = require('../utils/checkRequirements');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('removeinvites')
-        .setDescription('Remove invites from a user (Admin only)')
+        .setDescription('Remove invites from a user')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')

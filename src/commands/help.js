@@ -33,7 +33,7 @@ module.exports = {
             // Admin Commands Section
             embed.addFields(
                 {
-                    name: '🛠️ Setup Commands',
+                    name: '🛠️ Setup Commands (Admin)',
                     value: `
 \`/setup\` - Initial bot setup
 • Sets logs channel for bot activity
@@ -67,7 +67,7 @@ module.exports = {
 
 \`/reset\` - Reset bot data
 • Clear all bot data for the server
-• Use with caution!
+• **Use with caution!**
                     `
                 }
             );

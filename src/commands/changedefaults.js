@@ -180,7 +180,7 @@ module.exports = {
             // Log the change
             await interaction.client.logger.logToChannel(interaction.guildId,
                 `⚙️ **Bot Settings Updated**\n` +
-                `Admin: ${interaction.user.tag}\n` +
+                `Admin: <@${interaction.user.id}>\n` +
                 `Change: ${successMessage}`
             );
 

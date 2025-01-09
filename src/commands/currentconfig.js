@@ -1,11 +1,11 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { ServerConfig, Role } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('currentconfig')
-        .setDescription('Show current bot configuration for this server (Admin only)')
+        .setDescription('Show current bot configuration for this server')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
@@ -15,51 +15,75 @@ module.exports = {
         if (!serverConfig) return;  // Exit if checks failed
 
         try {
+            const embed = new EmbedBuilder()
+                .setColor(0x0099FF)
+                .setTitle('🛠️ Server Configuration')
+                .setTimestamp();
 
+            // Get channels and default role
             const logsChannel = interaction.guild.channels.cache.get(serverConfig.logs_channel_id);
             const botChannel = interaction.guild.channels.cache.get(serverConfig.bot_channel_id);
             const defaultRole = serverConfig.default_invite_role ? 
                 interaction.guild.roles.cache.get(serverConfig.default_invite_role) : 
                 'None set';
 
+            // Basic Configuration Section
+            embed.addFields({
+                name: '📋 Basic Settings',
+                value: `
+📝 Logs Channel: ${logsChannel || '❌ Channel not found!'}
+🤖 Bot Commands Channel: ${botChannel || '❌ Channel not found!'}
+👥 Default Invite Role: ${defaultRole || '❌ None set'}
+                `.trim()
+            });
+
             // Get all configured roles for this server
             const configuredRoles = await Role.find({ guild_id: interaction.guildId });
             
-            let response = `**Current Server Configuration:**\n\n` +
-                         `📝 Logs Channel: ${logsChannel || 'Channel not found!'}\n` +
-                         `🤖 Bot Commands Channel: ${botChannel || 'Channel not found!'}\n` +
-                         `👥 Default Invite Role: ${defaultRole || 'None set'}\n\n`;
-
             if (configuredRoles.length > 0) {
-                response += `**Current Role Configurations:**\n`;
-                
                 // Sort roles by max_invites (highest first)
                 configuredRoles.sort((a, b) => b.max_invites - a.max_invites);
                 
-                for (const roleConfig of configuredRoles) {
-                    const role = interaction.guild.roles.cache.get(roleConfig.role_id);
-                    const inviteLimit = roleConfig.max_invites === -1 ? 'Unlimited' : roleConfig.max_invites;
+                let rolesText = '**Role Invite Limits:**\n';
+                for (const roleData of configuredRoles) {
+                    const role = interaction.guild.roles.cache.get(roleData.role_id);
+                    const inviteLimit = roleData.max_invites === -1 ? '♾️ Unlimited' : `${roleData.max_invites}`;
                     
                     if (role) {
-                        response += `${role}: ${inviteLimit} invites\n`;
+                        rolesText += `${role}: ${inviteLimit} invites\n`;
                     }
                 }
+
+                embed.addFields({
+                    name: '🎭 Role Configuration',
+                    value: rolesText
+                });
             } else {
-                response += `**Current Role Configurations:**\nNo roles configured with invite limits yet.\n`;
+                embed.addFields({
+                    name: '🎭 Role Configuration',
+                    value: 'No roles configured with invite limits yet.'
+                });
             }
 
-            response += `\n*To modify server settings, use:*\n` +
-                       `\`/changedefaults logschannel\` - Change logs channel\n` +
-                       `\`/changedefaults botchannel\` - Change bot commands channel\n` +
-                       `\`/changedefaults defaultrole\` - Change default invite role\n` +
-                       `\`/setinvites\` - Modify role invite limits`;
+            // Help Section
+            embed.addFields({
+                name: '💡 Quick Help',
+                value: `
+Use these commands to modify settings:
+• \`/changedefaults logschannel\` - Change logs channel
+• \`/changedefaults botchannel\` - Change bot commands channel
+• \`/changedefaults defaultrole\` - Change default invite role
+• \`/setinvites\` - Modify role invite limits
+\nUse \`/help\` to show all commands
+                `.trim()
+            });
 
-            await interaction.editReply({ content: response });
+            await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
             console.error('Error showing config:', error);
             await interaction.editReply({
-                content: 'There was an error fetching the server configuration.'
+                content: '❌ There was an error fetching the server configuration.'
             });
         }
     }
