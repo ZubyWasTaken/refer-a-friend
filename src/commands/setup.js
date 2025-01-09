@@ -99,7 +99,10 @@ module.exports = {
     } catch (error) {
       console.error('Error during setup:', error);
       await interaction.editReply({
-        content: 'There was an error during setup.'
+        content: 'There was an error during setup.\n' +
+                'Ensure the bot has the necessary permissions: ' +
+                'Manage Channels, Manage Roles, Send Messages, View Channels, Read Message History, Create Invite' +
+                'and that the refer-a-friend role is the highest possible role in the server.'
       });
     }
   }

@@ -1,6 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { Invite, JoinTracking } = require('../models/schemas');
-const checkRequirements = require('../utils/checkRequirements');
+const { Invite, ServerConfig } = require('../models/schemas');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,8 +13,15 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply({ flags: ['Ephemeral'] });
 
-    const serverConfig = await checkRequirements(interaction);
-    if (!serverConfig) return;  // Exit if checks failed
+    // Check if server is setup
+    const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+    if (!serverConfig) {
+        return await interaction.editReply({
+            content: '❌ This server is not set up for invite management.\n' +
+                    'Please contact a server administrator for assistance.',
+            flags: ['Ephemeral']
+        });
+    }
 
     try {
       const inviteNumber = interaction.options.getInteger('number');
@@ -34,20 +40,44 @@ module.exports = {
 
       const inviteToDelete = userInvites[inviteNumber - 1];
 
-      // Try to delete the invite from Discord
+      // First verify and delete the Discord invite
       try {
-        const inviteCode = inviteToDelete.invite_code;
+        // Fetch fresh list of guild invites
         const guildInvites = await interaction.guild.invites.fetch();
-        const discordInvite = guildInvites.find(inv => inv.code === inviteCode);
+        console.log('Found guild invites:', guildInvites.map(inv => inv.code).join(', '));
+        
+        const discordInvite = guildInvites.get(inviteToDelete.invite_code);
+        
         if (discordInvite) {
-          await discordInvite.delete();
+          // Found the invite, try to delete it
+          try {
+            await discordInvite.delete('User requested deletion');
+            console.log(`Successfully deleted Discord invite: ${inviteToDelete.invite_code}`);
+          } catch (deleteError) {
+            // If we get an Unknown Invite error, just continue with database cleanup
+            if (deleteError.code === 10006) {
+              console.log(`Invite ${inviteToDelete.invite_code} already deleted from Discord, cleaning up database`);
+            } else {
+              console.error(`Failed to delete Discord invite: ${inviteToDelete.invite_code}`, deleteError);
+              return await interaction.editReply({
+                content: '❌ Failed to delete the invite. Please try again or contact an administrator.',
+                flags: ['Ephemeral']
+              });
+            }
+          }
+        } else {
+          console.log(`Discord invite not found in guild: ${inviteToDelete.invite_code}`);
+          // If invite doesn't exist in Discord, just clean up database
         }
-      } catch (discordError) {
-        console.log('Discord invite already deleted or invalid:', discordError.code);
-        // Continue with database cleanup even if Discord invite is gone
+      } catch (fetchError) {
+        console.error('Error fetching guild invites:', fetchError);
+        return await interaction.editReply({
+          content: '❌ Failed to fetch server invites. Please try again or contact an administrator.',
+          flags: ['Ephemeral']
+        });
       }
 
-      // Delete from database
+      // Then delete from database
       await Invite.findOneAndDelete({
         invite_code: inviteToDelete.invite_code,
         guild_id: interaction.guildId

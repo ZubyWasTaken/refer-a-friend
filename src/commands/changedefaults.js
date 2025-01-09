@@ -32,11 +32,20 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('defaultrole')
-                .setDescription('Change the default invite role')
+                .setDescription('Change or remove the default invite role')
                 .addRoleOption(option =>
                     option.setName('role')
                         .setDescription('The new default invite role')
-                        .setRequired(true)
+                        .setRequired(false)
+                )
+                .addStringOption(option =>
+                    option.setName('delete')
+                        .setDescription('Remove the current default role?')
+                        .addChoices(
+                            { name: 'Yes', value: 'yes' },
+                            { name: 'No', value: 'no' }
+                        )
+                        .setRequired(false)
                 )
         ),
 
@@ -71,7 +80,41 @@ module.exports = {
                     break;
                 }
                 case 'defaultrole': {
+                    const deleteOption = interaction.options.getString('delete');
                     const newRole = interaction.options.getRole('role');
+
+                    // Handle deletion request
+                    if (deleteOption === 'yes') {
+                        if (!serverConfig.default_invite_role) {
+                            return await interaction.editReply({
+                                content: '❌ There is no default invite role set to remove.'
+                            });
+                        }
+
+                        await ServerConfig.findOneAndUpdate(
+                            { guild_id: interaction.guildId },
+                            { $unset: { default_invite_role: "" } }
+                        );
+
+                        await interaction.client.logger.logToChannel(interaction.guildId,
+                            `⚙️ **Bot Settings Updated**\n` +
+                            `Admin: <@${interaction.user.id}>\n` +
+                            `Change: Default invite role removed`
+                        );
+
+                        return await interaction.editReply({
+                            content: '✅ Default invite role has been removed.'
+                        });
+                    }
+
+                    // If not deleting, require a role
+                    if (!newRole) {
+                        return await interaction.editReply({
+                            content: '❌ You must provide a role to set as default, or use delete=yes to remove the current default role.'
+                        });
+                    }
+
+                    // Continue with existing role change logic
                     if (newRole.id === serverConfig.default_invite_role) {
                         return await interaction.editReply({
                             content: `❌ ${newRole} is already set as the default invite role.`
@@ -85,6 +128,21 @@ module.exports = {
                             content: `❌ I cannot assign the ${newRole} role as it is positioned higher than or equal to my highest role (${botRole}).`
                         });
                     }
+
+                    await ServerConfig.findOneAndUpdate(
+                        { guild_id: interaction.guildId },
+                        { default_invite_role: newRole.id }
+                    );
+
+                    await interaction.client.logger.logToChannel(interaction.guildId,
+                        `⚙️ **Bot Settings Updated**\n` +
+                        `Admin: <@${interaction.user.id}>\n` +
+                        `Change: Default invite role updated to ${newRole}`
+                    );
+
+                    await interaction.editReply({
+                        content: `✅ Default invite role updated to ${newRole}`
+                    });
                     break;
                 }
             }

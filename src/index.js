@@ -5,6 +5,7 @@ const fs = require("fs");
 const { initDatabase } = require("./database/init");
 const Logger = require("./utils/logger");
 const { isSetupComplete } = require("./utils/setupCheck");
+const { Invite } = require('./models/schemas');
 
 // Create a new client instance
 const client = new Client({
@@ -75,16 +76,53 @@ client.on("inviteCreate", (invite) => {
   }
 });
 
-// Update cache when invites are deleted
-client.on("inviteDelete", (invite) => {
-  // Only remove from cache if it was a bot invite
-  if (invite.inviterId === process.env.APPLICATION_ID) {
-    const guildInvites = client.invites.get(invite.guild.id);
-    if (guildInvites) {
-      guildInvites.delete(invite.code);
-      console.log(`Removed invite ${invite.code} from cache`);
+// Update cache and database when invites are deleted
+client.on("inviteDelete", async (invite) => {
+    try {
+        // Debug logging
+        console.log('Invite delete event triggered for:', {
+            code: invite.code,
+            guildId: invite.guild?.id,
+            channelId: invite.channel?.id
+        });
+
+        // First find the invite in our database before deleting
+        const inviteToDelete = await Invite.findOne({
+            invite_code: invite.code,
+            guild_id: invite.guild.id
+        });
+
+        if (inviteToDelete) {
+            // Remove from database
+            await Invite.deleteOne({
+                invite_code: invite.code,
+                guild_id: invite.guild.id
+            });
+
+            console.log(`Database invite deleted: ${invite.code}`);
+
+            // Log the deletion
+            await client.logger.logToChannel(invite.guild.id,
+                `🗑️ **Invite Deleted**\n` +
+                `Invite Code: \`${invite.code}\`\n` +
+                `Originally Created By: <@${inviteToDelete.user_id}>\n` +
+                `Link: ${inviteToDelete.link}`
+            );
+        }
+
+        // Remove from cache if it exists
+        const guildInvites = client.invites.get(invite.guild.id);
+        if (guildInvites) {
+            guildInvites.delete(invite.code);
+            console.log(`Cache invite deleted: ${invite.code}`);
+        }
+
+    } catch (error) {
+        console.error('Error handling invite deletion:', error, {
+            inviteCode: invite?.code,
+            guildId: invite?.guild?.id
+        });
     }
-  }
 });
 
 // Attach logger to client

@@ -21,6 +21,17 @@ module.exports = {
       });
     }
 
+    // After server setup check, add invite limit check
+    const totalServerInvites = await Invite.countDocuments({ guild_id: interaction.guildId });
+
+    if (totalServerInvites >= 1000) {
+        return await interaction.editReply({
+            content: '❌ This server has reached its maximum invite capacity (1000 invites).\n' +
+                    'Please contact a server administrator to remove unused invites.',
+            flags: ['Ephemeral']
+        });
+    }
+
     try {
       const member = interaction.member;
       const roles = member.roles.cache;
@@ -182,7 +193,7 @@ module.exports = {
         }
 
         await interaction.editReply({
-          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.`
+          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`
         });
         return;
       }

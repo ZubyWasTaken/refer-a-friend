@@ -31,42 +31,80 @@ module.exports = {
 
         if (isAdmin) {
             // Admin Commands Section
-            embed.addFields({
-                name: '🛠️ Admin Commands',
-                value: `
-\`/setup\` - Initial bot setup (logs channel, bot channel, default role)
-\`/changedefaults\` - Change server settings:
-  • \`logschannel\` - Change logs channel
-  • \`botchannel\` - Change bot commands channel
-  • \`defaultrole\` - Change default invite role
-\`/setinvites\` - Set invite limits for a role
-\`/addinvites\` - Give invites to a user
-\`/removeinvites\` - Remove invites from a user
-\`/checkinvites\` - Check any user's invite balance and active invites
-\`/reset\` - Reset all bot data for the server
-                `
-            });
+            embed.addFields(
+                {
+                    name: '🛠️ Setup Commands',
+                    value: `
+\`/setup\` - Initial bot setup
+• Sets logs channel for bot activity
+• Sets bot channel for command usage
+• Sets default role for new invites
+
+\`/changedefaults\` - Modify server settings
+• \`logschannel\` - Change where bot logs appear
+• \`botchannel\` - Change where commands can be used
+• \`defaultrole\` - Change/remove default invite role
+                    `
+                },
+                {
+                    name: '⚙️ Invite Management (Admin)',
+                    value: `
+\`/setinvites\` - Configure invite limits for roles
+• Set how many invites a role can create
+• Set unlimited invites for specific roles
+
+\`/addinvites\` - Give invites to users
+• Add invites to specific users
+• Specify role-based invite allocation
+
+\`/removeinvites\` - Remove invites from users
+• Remove invites from specific users
+• Manage invite balances
+
+\`/checkinvites\` - Monitor invite usage
+• Check any user's invite balance
+• View their active invite links
+
+\`/reset\` - Reset bot data
+• Clear all bot data for the server
+• Use with caution!
+                    `
+                }
+            );
         }
 
         // Regular Commands Section (shown to everyone)
         embed.addFields({
             name: '👥 User Commands',
             value: `
-\`/createinvite\` - Create a single-use invite
-\`/invites\` - Check your invite balance and active invites
-\`/deleteinvite\` - Delete one of your invite links
-\`/help\` - Show this help message
+\`/createinvite\` - Create a new invite
+• Creates a single-use invite link
+• Shows your remaining invite balance
 
-Made by [Zuby](https://imzuby.straw.page/)
+\`/invites\` - Check your invites
+• View your remaining invite balance
+• See all your active invite links
+
+\`/deleteinvite\` - Remove a specific invite
+• Delete specific invite links
+
+\`/help\` - Show this help menu
+• View all available commands
+• See command descriptions
             `
         });
 
         // Add description based on user type
         if (isAdmin) {
-            embed.setDescription('Here are all available commands, including admin commands.');
+            embed.setDescription('Here are all available commands, including admin commands.\nCommands are grouped by function for easier reference.');
         } else {
-            embed.setDescription('Here are all commands available to you.');
+            embed.setDescription('Here are all commands available to you.\nEach command includes its basic functions and usage.');
         }
+
+        embed.addFields({
+            name: '\u200B',  // Zero-width space for spacing
+            value: `Made by [Zuby](https://imzuby.straw.page/)`
+        });
 
         await interaction.editReply({ 
             embeds: [embed], 

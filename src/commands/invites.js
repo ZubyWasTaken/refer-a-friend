@@ -59,6 +59,28 @@ module.exports = {
             guild_id: interaction.guildId
         });
 
+        // Fetch current Discord invites
+        const discordInvites = await interaction.guild.invites.fetch();
+
+        // Filter out invites that no longer exist in Discord
+        const validInvites = activeInvites.filter(dbInvite => 
+            discordInvites.some(discordInvite => discordInvite.code === dbInvite.invite_code)
+        );
+
+        // Clean up any invalid invites from database
+        const invalidInvites = activeInvites.filter(dbInvite => 
+            !discordInvites.some(discordInvite => discordInvite.code === dbInvite.invite_code)
+        );
+
+        // Remove invalid invites from database
+        if (invalidInvites.length > 0) {
+            await Invite.deleteMany({
+                invite_code: { $in: invalidInvites.map(inv => inv.invite_code) },
+                guild_id: interaction.guildId
+            });
+            console.log(`Cleaned up ${invalidInvites.length} invalid invites from database`);
+        }
+
         // Debug logs
         console.log('User ID:', member.id);
         console.log('Guild ID:', interaction.guildId);
@@ -77,9 +99,9 @@ module.exports = {
             response += `You have ${totalInvites} invites remaining\n\n`;
         }
 
-        if (activeInvites.length > 0) {
+        if (validInvites.length > 0) {
             response += '**Active Invites:**\n';
-            activeInvites.forEach((invite, index) => {
+            validInvites.forEach((invite, index) => {
                 response += `${index + 1}. ${invite.link}\n`;
             });
             response += '\nUse `/deleteinvite <number>` to delete a specific invite.';
