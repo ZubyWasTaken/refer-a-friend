@@ -11,6 +11,16 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply(); 
 
+        // Check if user has Administrator privileges
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return await interaction.editReply({
+            content: '❌ You need a role with **Administrator** privileges to run this command.\n\n' +
+                    'Please:\n' +
+                    '1. Ask a server administrator to give you a role with Administrator permissions\n' +
+                    '2. Or ask them to run this command instead'
+            });
+        }
+
         // Get logging channel before deleting config
         const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
 

@@ -113,7 +113,7 @@ module.exports = {
                     response += `${index + 1}. ${inv.link}\n`;
                 });
             } else {
-                response += `\n${displayName} has no active invites.`;
+                response += `\nThey have no active invites.`;
             }
 
             await interaction.editReply({

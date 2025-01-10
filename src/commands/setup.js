@@ -24,6 +24,16 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply();
 
+    // Check if user has Administrator privileges
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return await interaction.editReply({
+        content: '❌ You need a role with **Administrator** privileges to run this command.\n\n' +
+                'Please:\n' +
+                '1. Ask a server administrator to give you a role with Administrator permissions\n' +
+                '2. Or ask them to run this command instead'
+      });
+    }
+
     // Add setup check at the start
     const existingConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
     if (existingConfig) {
@@ -172,6 +182,7 @@ module.exports = {
 
       // Send test messages
       await logsChannel.send('✅ Bot logging has been configured for this channel.');
+      await botChannel.send('✅ Bot commands have been configured to only be executed in this channel.');
 
     } catch (error) {
       console.error('Error during setup:', error);

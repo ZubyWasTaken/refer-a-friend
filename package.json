@@ -1,6 +1,6 @@
 {
   "name": "refer-a-friend",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Discord bot for managing invites with role-based permissions",
   "main": "src/index.js",
   "scripts": {
