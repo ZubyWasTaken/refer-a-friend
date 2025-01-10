@@ -1,0 +1,51 @@
+# Use Node.js 21 as base image
+FROM node:21-slim
+
+# Set working directory
+WORKDIR /app
+
+# Create non-root user and group
+RUN if getent group users > /dev/null 2>&1; then \
+      echo "Group 'users' already exists"; \
+    else \
+      groupadd -g 100 users; \
+    fi && \
+    if id -u nobody > /dev/null 2>&1; then \
+      echo "User 'nobody' already exists"; \
+    else \
+      useradd -u 99 -g users -s /bin/sh nobody; \
+    fi
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Create logs directory and set permissions
+RUN mkdir -p /app/logs && \
+    chown -R nobody:users /app && \
+    chmod 755 /app/logs
+
+# Copy application code
+COPY --chown=nobody:users . .
+
+# Switch to non-root user
+USER nobody
+
+# Define environment variables
+ENV NODE_ENV=production \
+    BOT_TOKEN= \
+    CLIENT_ID= \
+    APPLICATION_ID= \
+    MONGODB_URI=
+
+# Define logs volume
+VOLUME ["/app/logs"]
+
+# Copy and set entrypoint script
+COPY --chmod=+x entrypoint.sh /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Start the bot
+CMD ["node", "src/index.js"]

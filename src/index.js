@@ -26,6 +26,14 @@ client.recentlyDeletedInvites = new Collection();
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
+  // Log the bot's presence
+  client.logger.logToFile("Bot logged in", "bot_logged_in", {
+    guildId: null,
+    guildName: null,
+    userId: client.user.id,
+    username: client.user.tag
+  });
+
   // Set the bot's presence
   client.user.setPresence({
     activities: [{ 
@@ -37,6 +45,14 @@ client.on("ready", async () => {
 
   // Initialize database
   await initDatabase();
+
+  // Log the database initialization
+  client.logger.logToFile("Database initialized", "database_initialized", {
+    guildId: null,
+    guildName: null,
+    userId: client.user.id,
+    username: client.user.tag
+  });
 
   // Cache invites for all guilds
   for (const guild of client.guilds.cache.values()) {
@@ -50,11 +66,26 @@ client.on("ready", async () => {
         guild.id,
         new Collection(botInvites.map((invite) => [invite.code, invite]))
       );
-      console.log(
-        `Cached ${botInvites.size} bot invites for guild ${guild.name}`
-      );
+      
+
+      // Log the action
+      client.logger.logToFile("Invite cache initialized", "invite_cache_initialized", {
+        guildId: guild.id,
+        guildName: guild.name,
+        userId: client.user.id,
+        username: client.user.tag
+      });
     } catch (error) {
       console.error(`Error caching invites for guild ${guild.name}:`, error);
+
+      // Log the error
+      client.logger.logToFile("Error caching invites", "error", {
+        guildId: guild.id,
+        guildName: guild.name,
+        userId: client.user.id,
+        username: client.user.tag,
+        error: error.message
+      });
     }
   }
 });
@@ -63,18 +94,43 @@ client.on("ready", async () => {
 client.on("inviteCreate", (invite) => {
   // Only cache if invite was created by the bot
   if (invite.inviterId === process.env.APPLICATION_ID) {
-    console.log(`New bot invite created: ${invite.code}`);
+
+    // Log the action
+    client.logger.logToFile("New bot invite created", "new_bot_invite_created", {
+      guildId: invite.guild.id,
+      guildName: invite.guild.name,
+      userId: client.user.id,
+      username: client.user.tag,
+      inviteCode: invite.code
+    });
+
     const guildInvites = client.invites.get(invite.guild.id);
     if (guildInvites) {
       guildInvites.set(invite.code, invite);
-      console.log(`Added to cache. Cache size: ${guildInvites.size}`);
+
+      // Log the action
+      client.logger.logToFile("Invite added to cache", "invite_added_to_cache", {
+        guildId: invite.guild.id,
+        guildName: invite.guild.name,
+        userId: client.user.id,
+        username: client.user.tag,
+        inviteCode: invite.code
+      });
     } else {
       // If no cache exists for this guild, create one
       client.invites.set(
         invite.guild.id,
         new Collection([[invite.code, invite]])
       );
-      console.log(`Created new cache for guild with invite ${invite.code}`);
+
+      // Log the action
+      client.logger.logToFile("New invite cache created", "new_invite_cache_created", {
+        guildId: invite.guild.id,
+        guildName: invite.guild.name,
+        userId: client.user.id,
+        username: client.user.tag,
+        inviteCode: invite.code
+      });
     }
   }
 });
@@ -82,12 +138,6 @@ client.on("inviteCreate", (invite) => {
 // Update cache and database when invites are deleted
 client.on("inviteDelete", async (invite) => {
     try {
-        // Debug logging
-        console.log('Invite delete event triggered for:', {
-            code: invite.code,
-            guildId: invite.guild?.id,
-            channelId: invite.channel?.id
-        });
 
         // First find the invite in our database before deleting
         const inviteToDelete = await Invite.findOne({
@@ -112,8 +162,6 @@ client.on("inviteDelete", async (invite) => {
                 guild_id: invite.guild.id
             });
 
-            console.log(`Database invite deleted: ${invite.code}`);
-
             // // Log the deletion
             // await client.logger.logToChannel(invite.guild.id,
             //     `🗑️ **Invite Deleted**\n` +
@@ -121,25 +169,43 @@ client.on("inviteDelete", async (invite) => {
             //     `Originally Created By: <@${inviteToDelete.user_id}>\n` +
             //     `Link: ${inviteToDelete.link}`
             // );
+
+            // Log the action
+            client.logger.logToFile("Invite deleted", "invite_deleted", {
+                guildId: invite.guild.id,
+                guildName: invite.guild.name,
+                userId: client.user.id,
+                username: client.user.tag,
+                inviteCode: invite.code
+            });
         }
 
         // Remove from cache if it exists
         const guildInvites = client.invites.get(invite.guild.id);
         if (guildInvites) {
             guildInvites.delete(invite.code);
-            console.log(`Cache invite deleted: ${invite.code}`);
         }
 
-    } catch (error) {
-        console.error('Error handling invite deletion:', error, {
+    } catch (error) {  
+        // Log the error
+        client.logger.logToFile("Error handling invite deletion", "error", {
+            guildId: invite?.guild?.id,
+            guildName: invite?.guild?.name,
+            userId: client.user.id,
+            username: client.user.tag,
             inviteCode: invite?.code,
-            guildId: invite?.guild?.id
+            error: error.message
         });
     }
 });
 
 // Attach logger to client
 client.logger = new Logger(client);
+
+// Clean logs older than 30 days every 24 hours
+setInterval(() => {
+    client.logger.cleanOldLogs(30);
+}, 24 * 60 * 60 * 1000);
 
 // Load commands and events
 client.commands = new Collection();
@@ -188,3 +254,4 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(process.env.BOT_TOKEN);
+

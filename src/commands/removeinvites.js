@@ -87,18 +87,42 @@ module.exports = {
                 { new: true }
             );
 
-            // Log the action
+            // Get total invites across all roles after update
+            const totalInvites = await User.aggregate([
+                {
+                    $match: {
+                        user_id: targetUser.id,
+                        guild_id: interaction.guildId
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: "$invites_remaining" }
+                    }
+                }
+            ]);
+
+            // Log the action with the correct total
             await interaction.client.logger.logToChannel(interaction.guildId,
                 `🎟️ **Invites Removed**\n` +
                 `Admin: <@${interaction.user.id}>\n` +
                 `User: <@${targetUser.id}>\n` +
                 `Amount: -${amount}\n` +
-                `New Total: ${updatedUser.invites_remaining}`
+                `New Total: ${totalInvites[0]?.total || 0}`
             );
+
+            // Log the invite removal to file
+            interaction.client.logger.logToFile(`Removed ${amount} invites from user ${targetUser.tag}`, "invite_remove", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag
+            });
 
             await interaction.editReply({
                 content: `✅ Removed ${amount} invites from <@${targetUser.id}>.\n` +
-                        `They now have ${updatedUser.invites_remaining} invites remaining.`
+                        `They now have ${totalInvites[0]?.total || 0} invites remaining.`
             });
 
         } catch (error) {

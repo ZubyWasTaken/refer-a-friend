@@ -24,6 +24,15 @@ module.exports = {
             const displayName = member.displayName;
             const isTargetAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
+            // Log that someone is checking invites
+            interaction.client.logger.logToFile("Invite check performed", "invite_check", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                message: `Checked invites for user: ${targetUser.tag} (${targetUser.id})`
+            });
+
             // Get user's invite information
             const userInvites = await User.aggregate([
                 {
@@ -74,6 +83,17 @@ module.exports = {
                     }
                 }
             ]);
+
+            // Log the results
+            interaction.client.logger.logToFile(`Invite check results for ${targetUser.tag} (${targetUser.id}): remaining invites ${userInvites[0].totalInvitesRemaining} active invites ${activeInvites.length}`, "invite_check", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                message: `Remaining invites: ${isTargetAdmin ? 'Unlimited' : 
+                    userInvites.length > 0 ? userInvites[0].totalInvitesRemaining : 0}, ` +
+                    `Active invites: ${activeInvites.length}`
+            });
 
             // Format response
             let response = `**Invite Balance for ${displayName}:**\n`;

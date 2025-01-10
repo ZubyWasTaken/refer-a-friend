@@ -64,18 +64,42 @@ module.exports = {
                     { new: true }  // This returns the updated document
                 );
 
-                await interaction.editReply({
-                    content: `✅ Successfully added ${amount} invites to ${targetUser}.`,
-                    flags: ['Ephemeral']
+                // Get total invites across all roles after update
+                const totalInvites = await User.aggregate([
+                    {
+                        $match: {
+                            user_id: targetUser.id,
+                            guild_id: interaction.guildId
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: null,
+                            total: { $sum: "$invites_remaining" }
+                        }
+                    }
+                ]);
+
+                // Log the invite addition to file
+                interaction.client.logger.logToFile(`Added ${amount} invites to user ${targetUser.tag}`, "invite_add", {
+                    guildId: interaction.guildId,
+                    guildName: interaction.guild.name,
+                    userId: interaction.user.id,
+                    username: interaction.user.tag,
                 });
 
-                // Log the action with the correct updated value
+                await interaction.editReply({
+                    content: `✅ Successfully added ${amount} invites to ${targetUser}.`+
+                        `\nThey now have ${totalInvites[0]?.total || 0} invites remaining.`
+                });
+
+                // Log the action with the correct total
                 await interaction.client.logger.logToChannel(interaction.guildId,
                     `🎟️ **Invite Added**\n` +
                     `Admin: <@${interaction.user.id}>\n` +
                     `User: <@${targetUser.id}>\n` +
                     `Amount: +${amount}\n` +
-                    `New Total: ${updatedUser.invites_remaining}`
+                    `New Total: ${totalInvites[0]?.total || 0}`
                 );
             } else {
                 await interaction.editReply({

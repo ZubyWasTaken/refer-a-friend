@@ -1,3 +1,49 @@
+# Dependencies
 node_modules/
+package-lock.json
+
+# Environment variables
 .env
-*.sqlite 
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime data
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE/Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Debug files
+.debug
+debug.log
+
+# Build output
+dist/
+build/
+out/
+
+# Coverage reports
+coverage/
+
+# Personal notes/todos
+TODO.md
+NOTES.md 

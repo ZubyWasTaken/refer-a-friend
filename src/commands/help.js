@@ -120,6 +120,15 @@ module.exports = {
             value: `Made by [Zuby](https://imzuby.straw.page/)`
         });
 
+        // Log command usage
+        interaction.client.logger.logToFile("Command usage", "command_usage", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            command: 'help'
+        });
+
         await interaction.editReply({ 
             embeds: [embed], 
             flags: ['Ephemeral']

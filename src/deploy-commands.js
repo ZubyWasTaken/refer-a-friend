@@ -11,16 +11,10 @@ console.log('Commands directory:', commandsPath);
 
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-// Debug: Log found command files
-console.log('Found command files:', commandFiles);
-
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
   commands.push(command.data.toJSON());
 }
-
-// Debug: Log commands being registered
-console.log('Commands being registered:', commands.map(cmd => cmd.name));
 
 const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 

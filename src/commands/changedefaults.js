@@ -102,6 +102,15 @@ module.exports = {
                             `Change: Default invite role removed`
                         );
 
+                        // Log the default role removal
+                        interaction.client.logger.logToFile(`Default invite role removed`, "settings", {
+                            guildId: interaction.guildId,
+                            guildName: interaction.guild.name,
+                            userId: interaction.user.id,
+                            username: interaction.user.tag
+                        });
+
+
                         return await interaction.editReply({
                             content: '✅ Default invite role has been removed.'
                         });
@@ -155,18 +164,42 @@ module.exports = {
                     const logsChannel = interaction.options.getChannel('channel');
                     updateData = { logs_channel_id: logsChannel.id };
                     successMessage = `✅ Logs channel updated to ${logsChannel}`;
+                    
+                    // Log the logs channel change
+                    interaction.client.logger.logToFile(`Logs channel changed to ${logsChannel.name}`, "settings", {
+                        guildId: interaction.guildId,
+                        guildName: interaction.guild.name,
+                        userId: interaction.user.id,
+                        username: interaction.user.tag
+                    });
                     break;
 
                 case 'botchannel':
                     const botChannel = interaction.options.getChannel('channel');
                     updateData = { bot_channel_id: botChannel.id };
                     successMessage = `✅ Bot commands channel updated to ${botChannel}`;
+                    
+                    // Log the bot channel change
+                    interaction.client.logger.logToFile(`Bot commands channel changed to ${botChannel.name}`, "settings", {
+                        guildId: interaction.guildId,
+                        guildName: interaction.guild.name,
+                        userId: interaction.user.id,
+                        username: interaction.user.tag
+                    });
                     break;
 
                 case 'defaultrole':
                     const defaultRole = interaction.options.getRole('role');
                     updateData = { default_invite_role: defaultRole.id };
                     successMessage = `✅ Default invite role updated to ${defaultRole}`;
+                    
+                    // Log the default role change
+                    interaction.client.logger.logToFile(`Default invite role changed to ${defaultRole.name}`, "settings", {
+                        guildId: interaction.guildId,
+                        guildName: interaction.guild.name,
+                        userId: interaction.user.id,
+                        username: interaction.user.tag
+                    });
                     break;
             }
 

@@ -15,6 +15,14 @@ module.exports = {
         if (!serverConfig) return;  // Exit if checks failed
 
         try {
+            // Log that configuration is being checked
+            interaction.client.logger.logToFile(`Server configuration checked by ${interaction.user.tag}`, "config", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag
+            });
+
             const embed = new EmbedBuilder()
                 .setColor(0x0099FF)
                 .setTitle('🛠️ Server Configuration')
@@ -82,6 +90,16 @@ Use these commands to modify settings:
 
         } catch (error) {
             console.error('Error showing config:', error);
+            
+            // Log the error
+            interaction.client.logger.logToFile("Failed to show configuration", "error", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                message: error.message
+            });
+
             await interaction.editReply({
                 content: '❌ There was an error fetching the server configuration.'
             });

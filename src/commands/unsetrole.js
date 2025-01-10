@@ -62,6 +62,15 @@ module.exports = {
                         `Use \`/removeinvites\` to modify user invite balances.`
             });
 
+            // Log the action
+            interaction.client.logger.logToFile(`Successfully removed invite configuration from role "${selectedRole.name}"`, "unset_role_invites", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                roleName: selectedRole.name
+            }); 
+
         } catch (error) {
             console.error('Error unsetting role:', error);
             await interaction.editReply({

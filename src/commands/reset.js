@@ -56,12 +56,12 @@ module.exports = {
         const response = await interaction.editReply({
             content: '⚠️ **WARNING: This action cannot be undone!**\n\n' +
                     'This will delete:\n' +
-                    '• All invite configurations\n' +
-                    '• All role settings\n' +
-                    '• All invite tracking data\n' +
-                    '• All user permissions\n' +
-                    '• Bot configuration\n' +
-                    '• **All active invite links created by the bot**\n\n' +
+                    '• All of the server configuration settings for the bot\n' +
+                    '• All active invite links created by the bot\n' +
+                    '• All role invite permissions and limits\n' +
+                    '• All invite tracking and join history from the database\n' +
+                    '• All user invite allowances\n\n' +
+                    '**This command will be as if you never used the bot before.**\n\n' +
                     'Are you sure you want to reset all bot data for this server?',
             components: [row]
         });
@@ -100,6 +100,14 @@ module.exports = {
                 // Wait for all invite deletions to complete
                 await Promise.all(deletePromises);
 
+                // Log the reset action
+                interaction.client.logger.logToFile("Server data reset", "reset", {
+                    guildId: interaction.guildId,
+                    guildName: interaction.guild.name,
+                    userId: interaction.user.id,
+                    username: interaction.user.tag
+                });
+
                 // Delete all data for this guild from database
                 await Promise.all([
                     User.deleteMany({ guild_id: interaction.guildId }),
@@ -128,7 +136,7 @@ module.exports = {
                         if (logsChannel) {
                             await logsChannel.send(
                                 '🔄 **Server Reset**\n' +
-                                `Reset by: ${interaction.user.tag}\n` +
+                                `Reset by: <@${interaction.user.id}>\n` +
                                 'All bot data for this server has been cleared.\n' +
                                 'Use `/setup` to reconfigure the bot.'
                             );
@@ -137,6 +145,15 @@ module.exports = {
                         console.error('Could not send final log message:', error);
                     }
                 }
+
+                // Log command usage
+                interaction.client.logger.logToFile("Command usage", "command_usage", {
+                    guildId: interaction.guildId,
+                    guildName: interaction.guild.name,
+                    userId: interaction.user.id,
+                    username: interaction.user.tag,
+                    command: 'reset'
+                });
 
             } else {
                 await confirmation.update({
@@ -150,6 +167,7 @@ module.exports = {
                     content: '❌ Reset cancelled - No response received within 30 seconds.',
                     components: []
                 });
+                
             } else {
                 console.error('Error in reset command:', error);
                 await interaction.editReply({

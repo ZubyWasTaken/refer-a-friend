@@ -38,6 +38,45 @@ module.exports = {
 
     try {
       const guild = interaction.guild;
+      const botMember = guild.members.me;
+      
+      // Check bot role permissions
+      const requiredBotPermissions = [
+          'ViewAuditLog',
+          'ManageGuild',    // Manage Server
+          'ManageRoles',
+          'ManageChannels',
+          'CreateInstantInvite',
+          'ViewChannel',
+          'SendMessages',
+          'SendMessagesInThreads',
+          'EmbedLinks',
+          'ReadMessageHistory',
+          'UseApplicationCommands'  // Use Slash Commands
+      ];
+
+      const missingPermissions = requiredBotPermissions.filter(perm => !botMember.permissions.has(perm));
+      
+      if (missingPermissions.length > 0) {
+          return await interaction.editReply({
+              content: '❌ The bot role is missing required permissions!\n\n' +
+                      'Missing Permissions:\n' +
+                      missingPermissions.map(perm => `- ${perm}`).join('\n') + '\n\n' +
+                      'Please ensure the bot role has all necessary permissions:\n' +
+                      '- View Audit Log\n' +
+                      '- Manage Server\n' +
+                      '- Manage Roles\n' +
+                      '- Manage Channels\n' +
+                      '- Create Invite\n' +
+                      '- View Channels\n' +
+                      '- Send Messages\n' +
+                      '- Send Messages in Threads\n' +
+                      '- Embed Links\n' +
+                      '- Read Message History\n' +
+                      '- Use Slash Commands'
+          });
+      }
+
       const logsChannel = interaction.options.getChannel('logs');
       const botChannel = interaction.options.getChannel('botchannel');
       const defaultRole = interaction.options.getRole('defaultrole');
@@ -53,6 +92,37 @@ module.exports = {
                   '4. Enable "Show Join Messages"'
         });
       }
+
+      // Add channel permission checks
+      const requiredPermissions = ['ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory'];
+      
+      // Check logs channel permissions
+      const logsPermissions = logsChannel.permissionsFor(botMember);
+      if (!requiredPermissions.every(perm => logsPermissions.has(perm))) {
+        return await interaction.editReply({
+          content: 'There was an error during setup.\n' +
+                  `Make sure the bot has access to the logs channel (${logsChannel}).`
+        });
+      }
+
+      // Check bot channel permissions
+      const botChannelPermissions = botChannel.permissionsFor(botMember);
+      if (!requiredPermissions.every(perm => botChannelPermissions.has(perm))) {
+        return await interaction.editReply({
+          content: 'There was an error during setup.\n' +
+                  `Make sure the bot has access to the bot commands channel (${botChannel}).`
+        });
+      }
+
+      // Check system channel permissions
+      const systemPermissions = systemChannel.permissionsFor(botMember);
+      if (!requiredPermissions.every(perm => systemPermissions.has(perm))) {
+        return await interaction.editReply({
+          content: 'There was an error during setup.\n' +
+                  `Make sure the bot has access to the system messages channel (${systemChannel}).`
+        });
+      }
+
 
       // Check if system messages are enabled
       const systemChannelFlags = guild.systemChannelFlags;
@@ -90,20 +160,23 @@ module.exports = {
         `\nUse \`/help\` anywhere in the server to see all available commands.`
       ].filter(Boolean).join('\n');
 
+      // Log successful setup
+      interaction.client.logger.logToFile("Server setup completed", "setup", {
+        guildId: interaction.guildId,
+        guildName: interaction.guild.name,
+        userId: interaction.user.id,
+        username: interaction.user.tag
+      });
+
       await interaction.editReply({ content: response });
 
       // Send test messages
       await logsChannel.send('✅ Bot logging has been configured for this channel.');
-      await systemChannel.send('✅ Join message tracking has been configured for this channel.');
 
     } catch (error) {
       console.error('Error during setup:', error);
       await interaction.editReply({
-        content: 'There was an error during setup.\n' +
-                'The bot has access to the logs channel, system messages channel, and the bot commands channel.' +
-                'Ensure the bot has the necessary permissions: ' +
-                'View Audit Log, Manage Server, Manage Roles, Manage Channels, Create Invite, View Channels, Send Messages, Send Messages in Threads, Embed Links, Read Message History, Use Slash Commands' +
-                'and that the Refer-a-Friend role is the highest possible role in the server.'
+        content: 'There was an error during setup. Please contact the [developer](https://imzuby.straw.page/) for assistance.\n'
       });
     }
   }

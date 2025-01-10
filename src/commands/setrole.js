@@ -54,7 +54,17 @@ module.exports = {
       const existingMembers = membersWithRole.filter(member => member.roles.cache.has(role.id));
       
       let updatedCount = 0;
-      let response = `✅ Successfully set maximum invites for role ${role.name} to ${maxInvites === -1 ? 'unlimited' : maxInvites}.`;
+      let response = `✅ Successfully set maximum invites for \`${role.name}\` to ${maxInvites === -1 ? 'unlimited' : maxInvites}.`;
+
+      // Log the action
+      interaction.client.logger.logToFile(`Set maximum invites for \`${role.name}\` to ${maxInvites === -1 ? 'unlimited' : maxInvites}.`, "set_role_invites", {
+        guildId: interaction.guildId,
+        guildName: interaction.guild.name,
+        userId: interaction.user.id,
+        username: interaction.user.tag,
+        roleName: role.name,
+        maxInvites: maxInvites
+      });
 
       if (maxInvites === -1) {
         // Set unlimited invites for all members with this role
@@ -74,6 +84,16 @@ module.exports = {
         if (updatedCount > 0) {
           response += `\n\nℹ️ Set unlimited invites for ${updatedCount} member${updatedCount === 1 ? '' : 's'} with this role.`;
         }
+
+        // Log the action
+        interaction.client.logger.logToFile("Set role invites", "set_role_invites", {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          roleName: role.name,
+          maxInvites: 'unlimited'
+        });
       } else {
         // Handle normal invite amounts for existing members
         for (const member of existingMembers.values()) {

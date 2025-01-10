@@ -167,6 +167,15 @@ module.exports = {
           max_uses: 1
         });
 
+        // Log invite creation to file
+        interaction.client.logger.logToFile("Invite created", "invite", {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          inviteCode: invite.code
+      });
+
         // Decrement one invite from the role with remaining invites
         for (const role of userRoles) {
           if (role.invites_remaining > 0) {
@@ -183,13 +192,13 @@ module.exports = {
         }
 
         // Customize message based on whether default role exists and is valid
-        let roleMessage = '';
-        if (serverConfig?.default_invite_role) {
-            const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
-            if (defaultRole) {
-                roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
-            }
-        }
+        // let roleMessage = '';
+        // if (serverConfig?.default_invite_role) {
+        //     const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+        //     if (defaultRole) {
+        //         roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
+        //     }
+        // }
 
         // First send the log message
         await interaction.client.logger.logToChannel(interaction.guildId, 
@@ -200,7 +209,7 @@ module.exports = {
 
         // Then send the reply and make sure to return
         return interaction.editReply({
-            content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`,
+            content: `✅ Created invite: ${invite.url}\n\nYou have ${totalInvites - 1} invites remaining.\nUse \`/invites\` to see your active invites.`,
             flags: ['Ephemeral']
         });
       }
@@ -210,6 +219,16 @@ module.exports = {
         maxAge: 0,
         unique: true
       });
+
+      // Log invite creation to file
+      interaction.client.logger.logToFile("Invite created", "invite", {
+        guildId: interaction.guildId,
+        guildName: interaction.guild.name,
+        userId: interaction.user.id,
+        username: interaction.user.tag,
+        inviteCode: invite.code,
+        message: `Single-use invite created in #${interaction.channel.name}`
+    });
 
       await Invite.create({
         invite_code: invite.code,
@@ -244,23 +263,31 @@ module.exports = {
           `Link: ${invite.url}`
       );
 
-      // Get role message
-      let roleMessage = '';
-      if (serverConfig?.default_invite_role) {
-          const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
-          if (defaultRole) {
-              roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
-          }
-      }
+      // // Get role message
+      // let roleMessage = '';
+      // if (serverConfig?.default_invite_role) {
+      //     const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
+      //     if (defaultRole) {
+      //         roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
+      //     }
+      // }
 
       // Final reply for unlimited invites case
       return await interaction.editReply({
-          content: `✅ Created invite: ${invite.url}${roleMessage}\n\nYou have unlimited invites remaining.\nUse \`/invites\` to see your active invites.`,
+          content: `✅ Created invite: ${invite.url}\n\nYou have unlimited invites remaining.\n\nUse \`/invites\` to see your active invites.`,
           flags: ['Ephemeral']
       });
 
     } catch (error) {
       console.error('Error in createinvite:', error);
+      // Log the error
+      interaction.client.logger.logToFile(`Failed to create invite: ${error.message}`, "error", {
+        guildId: interaction.guildId,
+        guildName: interaction.guild.name,
+        userId: interaction.user.id,
+        username: interaction.user.tag
+    });
+    
       await interaction.editReply({
         content: 'There was an error creating the invite.',
         flags: ['Ephemeral']

@@ -89,9 +89,9 @@ module.exports = {
 
         let response = '**Your Invite Balance:**\n';
         if (totalInvites === -1) {
-            response += 'You have unlimited invites remaining\n\n';
+            response += 'You can invite unlimited people.\n\n';
         } else {
-            response += `You have ${totalInvites} invites remaining\n\n`;
+            response += `You can invite ${totalInvites} people.\n\n`;
         }
 
         if (validInvites.length > 0) {
@@ -101,8 +101,17 @@ module.exports = {
             });
             response += '\nUse `/deleteinvite <number>` to delete a specific invite.';
         } else {
-            response += 'You have no active invites.';
+            response += 'Currently you have no active invites.';
         }
+
+        // Log command usage
+        interaction.client.logger.logToFile("Invites Command usage", "command_usage", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            command: 'invites'
+        });
 
         await interaction.editReply({
             content: response,
@@ -111,6 +120,16 @@ module.exports = {
 
     } catch (error) {
         console.error('Error in invites command:', error);
+
+        // Log error
+        interaction.client.logger.logToFile("Error in invites command", "error", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            message: error.message
+        });
+
         await interaction.editReply({
             content: 'There was an error checking your invites.',
             flags: ['Ephemeral']

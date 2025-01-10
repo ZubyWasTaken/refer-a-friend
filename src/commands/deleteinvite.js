@@ -33,6 +33,15 @@ module.exports = {
       });
 
       if (inviteNumber < 1 || inviteNumber > userInvites.length) {
+        // Log invalid attempt
+        interaction.client.logger.logToFile("Invalid invite deletion attempt", "invite_delete", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            message: `Attempted to delete invalid invite number: ${inviteNumber}. User has ${userInvites.length} invites.`
+        });
+
         return await interaction.editReply({
           content: `Invalid invite number. You have ${userInvites.length} active invites.`
         });
@@ -40,7 +49,16 @@ module.exports = {
 
       const inviteToDelete = userInvites[inviteNumber - 1];
 
-      // First verify and delete the Discord invite
+      // Log deletion attempt
+      interaction.client.logger.logToFile("Invite deletion started", "invite_delete", {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          inviteCode: inviteToDelete.invite_code,
+          message: `Starting deletion of invite: ${inviteToDelete.link}`
+      });
+
       try {
         // Fetch fresh list of guild invites
         const guildInvites = await interaction.guild.invites.fetch();
@@ -53,6 +71,15 @@ module.exports = {
                 // Force fetch the specific invite to ensure it's fresh
                 const freshInvite = await interaction.guild.invites.fetch(inviteToDelete.invite_code);
                 await freshInvite.delete('User requested deletion');
+                
+                // Log successful Discord invite deletion
+                interaction.client.logger.logToFile("Discord invite deleted", "invite_delete", {
+                    guildId: interaction.guildId,
+                    guildName: interaction.guild.name,
+                    userId: interaction.user.id,
+                    username: interaction.user.tag,
+                    inviteCode: inviteToDelete.invite_code
+                });
             } catch (deleteError) {
                 console.error(`Error deleting invite:`, deleteError);
                 if (deleteError.code === 10006) {
@@ -88,11 +115,30 @@ module.exports = {
             }
         } catch (verifyError) {
             // This error is expected if the invite is truly deleted
-            console.log(`Verified invite deletion - invite no longer exists`);
+            console.log(`Verified invite deletion - invite ${inviteToDelete.invite_code} no longer exists`);
+
+            // Log successful database deletion
+            interaction.client.logger.logToFile("Invite deleted from database", "invite_delete", {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                inviteCode: inviteToDelete.invite_code,
+                message: "Successfully removed from database"
+            });
         }
 
       } catch (fetchError) {
         console.error('Error in delete process:', fetchError);
+        // Log deletion error
+        interaction.client.logger.logToFile("Failed to delete invite", "error", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            inviteCode: inviteToDelete.invite_code,
+            message: fetchError.message
+        });
         return await interaction.editReply({
           content: '❌ Failed to delete the invite. Please try again or contact an administrator.',
           flags: ['Ephemeral']
@@ -100,11 +146,21 @@ module.exports = {
       }
 
       await interaction.editReply({
-        content: `✅ Deleted invite: ${inviteToDelete.link}`
+        content: `✅ Deleted invite: ${inviteToDelete.link}` +
+        `\n\nUse \`/invites\` to see your updated invites list and balance.`
       });
 
     } catch (error) {
       console.error('Error in deleteinvite:', error);
+      // Log general error
+      interaction.client.logger.logToFile("Error in delete invite command", "error", {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          message: error.message
+      });
+
       await interaction.editReply({
         content: '❌ There was an error deleting the invite.',
         flags: ['Ephemeral']
