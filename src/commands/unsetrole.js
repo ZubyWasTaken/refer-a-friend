@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { Role, ServerConfig } = require('../models/schemas');
+const { Role, ServerConfig, User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
@@ -56,14 +56,28 @@ module.exports = {
                 guild_id: interaction.guildId
             });
 
+            // Update all users who had this role configured
+            await User.updateMany(
+                { 
+                    guild_id: interaction.guildId,
+                    role_id: selectedRole.id 
+                },
+                { 
+                    $set: { 
+                        invites_remaining: 0,
+                        role_id: null 
+                    }
+                }
+            );
+
             await interaction.editReply({
                 content: `✅ Successfully removed invite configuration from role ${selectedRole}.\n\n` +
-                        `ℹ️ Note: This does not remove any invite balance from users. ` +
-                        `Use \`/removeinvites\` to modify user invite balances.`
+                        `ℹ️ Note: All users with this role have had their invite limits reset. ` +
+                        `Use \`/setinvites\` to set new invite limits if needed.`
             });
 
             // Log the action
-            interaction.client.logger.logToFile(`Successfully removed invite configuration from role "${selectedRole.name}"`, "unset_role_invites", {
+            interaction.client.logger.logToFile(`Successfully removed invite configuration from role "${selectedRole.name}" and reset user limits`, "unset_role_invites", {
                 guildId: interaction.guildId,
                 guildName: interaction.guild.name,
                 userId: interaction.user.id,
