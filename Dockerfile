@@ -33,18 +33,17 @@ COPY --chown=nobody:users . .
 # Switch to non-root user
 USER nobody
 
-# Define environment variables
-ENV NODE_ENV=production \
-    BOT_TOKEN= \
-    CLIENT_ID= \
-    APPLICATION_ID= \
-    MONGODB_URI=
+# Define non-sensitive environment variable
+ENV NODE_ENV=production
 
 # Define logs volume
 VOLUME ["/app/logs"]
 
-# Copy and set entrypoint script
-COPY --chmod=+x entrypoint.sh /usr/local/bin/
+# Copy and set entrypoint script with correct permissions
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod 755 /usr/local/bin/entrypoint.sh
+
+# Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Start the bot
