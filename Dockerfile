@@ -4,7 +4,7 @@ FROM node:21-slim
 # Set working directory
 WORKDIR /app
 
-# Create non-root user and group
+# Create non-root user and group (optional—some prefer to rely on environment variables)
 RUN if getent group users > /dev/null 2>&1; then \
       echo "Group 'users' already exists"; \
     else \
@@ -22,27 +22,21 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --omit=dev
 
-# Ensure subsequent commands run as root
-USER root
+# Copy application code (no chown here)
+COPY . .
 
-# Create logs directory with correct permissions
-RUN mkdir -p /app/logs \
-    && chmod 777 /app/logs \
-    && chown nobody:users /app/logs
-
-# Copy and set entrypoint script with correct permissions
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod 755 /usr/local/bin/entrypoint.sh
-
-# Copy application code, assigning ownership to nobody:users
-COPY --chown=nobody:users . .
-
-# Define a non-sensitive environment variable
+# Environment
 ENV NODE_ENV=production
 
+# Remove the volume line entirely
+# VOLUME ["/app/logs"]
+
+# Copy and set entrypoint
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Start the bot
+# Default command
 CMD ["node", "src/index.js"]
