@@ -22,10 +22,10 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --omit=dev
 
-# Create logs directory and set permissions
+# Create logs directory with proper permissions
 RUN mkdir -p /app/logs && \
     chown -R nobody:users /app && \
-    chmod 755 /app/logs
+    chmod -R 777 /app/logs  # More permissive for troubleshooting
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
