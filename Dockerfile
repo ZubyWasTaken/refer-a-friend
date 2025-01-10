@@ -20,7 +20,7 @@ RUN if getent group users > /dev/null 2>&1; then \
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Create logs directory and set permissions
 RUN mkdir -p /app/logs && \
