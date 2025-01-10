@@ -1,19 +1,33 @@
 {
   "name": "refer-a-friend",
-  "version": "0.1.0",
-  "description": "Discord bot for managing invites with role-based permissions",
-  "main": "src/index.js",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "src/backend",
+    "src/bot",
+    "src/frontend"
+  ],
   "scripts": {
-    "start": "node src/deploy-commands.js && node src/index.js",
-    "deploy": "node src/deploy-commands.js"
+    "dev:backend": "npm run dev --workspace=src/backend",
+    "dev:bot": "npm run start --workspace=src/bot",
+    "dev:frontend": "npm run dev --workspace=src/frontend",
+
+    "build:backend": "npm run build --workspace=src/backend",
+    "build:bot": "npm run deploy --workspace=src/bot",
+    "build:frontend": "npm run build --workspace=src/frontend",
+
+    "start:backend": "npm run start --workspace=src/backend",
+    "start:bot": "npm run start --workspace=src/bot",
+    "start:frontend": "npm run start --workspace=src/frontend",
+    
+    "deploy:bot": "npm run deploy --workspace=src/bot",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:bot\" \"npm run dev:frontend\"",
+    "build": "concurrently \"npm run build:backend\" \"npm run build:bot\" \"npm run build:frontend\"",
+    "start": "npm run build && concurrently \"npm run start:backend\" \"npm run start:bot\" \"npm run start:frontend\"",
+    
+    "install:all": "concurrently \"npm install --workspace=src/backend\" \"npm install --workspace=src/bot\" \"npm install --workspace=src/frontend\""
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "discord.js": "^14.17.2",
-    "dotenv": "^16.3.1",
-    "mongodb": "^6.3.0",
-    "mongoose": "^8.0.3"
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

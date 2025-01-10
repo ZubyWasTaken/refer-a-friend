@@ -1,0 +1,19 @@
+{
+  "name": "refer-a-friend",
+  "version": "0.1.0",
+  "description": "Discord bot for managing invites with role-based permissions",
+  "main": "./index.js",
+  "scripts": {
+    "start": "node ./deploy-commands.js && node ./index.js",
+    "deploy": "node ./deploy-commands.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.17.2",
+    "dotenv": "^16.3.1",
+    "mongodb": "^6.3.0",
+    "mongoose": "^8.0.3"
+  }
+}
