@@ -25,7 +25,8 @@ RUN npm install --omit=dev
 # Create logs directory with proper permissions
 RUN mkdir -p /app/logs && \
     chown -R nobody:users /app && \
-    chmod -R 777 /app/logs  # More permissive for troubleshooting
+    chmod -R 777 /app/logs && \
+    chmod g+s /app/logs  # Set SGID bit
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
