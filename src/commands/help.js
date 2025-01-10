@@ -25,7 +25,7 @@ module.exports = {
             .setTitle('📚 Command List')
             .setTimestamp()
             .setFooter({ 
-                text: 'Refer-a-Friend v0.1', 
+                text: 'Refer-a-Friend v0.1.1', 
                 iconURL: interaction.client.user.displayAvatarURL() 
             });
 
