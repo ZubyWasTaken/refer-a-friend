@@ -22,22 +22,15 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --omit=dev
 
-# Create logs directory with proper permissions
-RUN mkdir -p /app/logs && \
-    chown -R nobody:users /app && \
-    chmod -R 777 /app/logs && \
-    chmod g+s /app/logs  # Set SGID bit
+# Create logs directory
+RUN mkdir -p /app/logs
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
-RUN chmod 755 /usr/local/bin/entrypoint.sh && \
-    chown nobody:users /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # Copy application code
 COPY --chown=nobody:users . .
-
-# Switch to non-root user
-USER nobody
 
 # Define non-sensitive environment variable
 ENV NODE_ENV=production

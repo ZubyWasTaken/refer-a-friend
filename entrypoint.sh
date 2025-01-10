@@ -3,12 +3,9 @@
 # Exit on any error
 set -e
 
-# Ensure logs directory exists and has correct permissions
-if [ ! -d "/app/logs" ]; then
-    mkdir -p /app/logs
-    chown nobody:users /app/logs
-    chmod 755 /app/logs
-fi
+# Set permissions as root
+chmod -R 777 /app/logs
+chown -R nobody:users /app/logs
 
 # Verify environment variables
 if [ -z "$BOT_TOKEN" ] || [ -z "$MONGODB_URI" ] || [ -z "$CLIENT_ID" ] || [ -z "$APPLICATION_ID" ]; then
@@ -17,5 +14,5 @@ if [ -z "$BOT_TOKEN" ] || [ -z "$MONGODB_URI" ] || [ -z "$CLIENT_ID" ] || [ -z "
     exit 1
 fi
 
-# Start the bot
-exec "$@"
+# Switch to nobody user and start the application
+exec su -s /bin/sh nobody -c "$*"
