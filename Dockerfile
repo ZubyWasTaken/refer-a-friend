@@ -26,22 +26,20 @@ RUN npm install --omit=dev
 USER root
 
 # Create logs directory with correct permissions
-RUN mkdir -p /app/logs && \
-    chmod 777 /app/logs && \
-    chown 99:100 /app/logs
+RUN mkdir -p /app/logs \
+    && chmod 777 /app/logs \
+    && chown nobody:users /app/logs
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod 755 /usr/local/bin/entrypoint.sh
 
-# Copy application code with ownership set to nobody:users
+# Copy application code, assigning ownership to nobody:users
 COPY --chown=nobody:users . .
 
-# Define non-sensitive environment variable
+# Define a non-sensitive environment variable
 ENV NODE_ENV=production
 
-# Define logs volume with specific permissions
-VOLUME ["/app/logs"]
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

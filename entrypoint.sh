@@ -1,12 +1,12 @@
 #!/bin/sh
 
-# Exit on any error
+# Exit immediately on any error
 set -e
 
 # Verify environment variables
 if [ -z "$BOT_TOKEN" ] || [ -z "$MONGODB_URI" ] || [ -z "$CLIENT_ID" ] || [ -z "$APPLICATION_ID" ]; then
-    echo "Error: Required environment variables are not set"
-    echo "Please ensure all required environment variables are provided"
+    echo "Error: Required environment variables are not set."
+    echo "Please ensure BOT_TOKEN, MONGODB_URI, CLIENT_ID, and APPLICATION_ID are provided."
     exit 1
 fi
 
