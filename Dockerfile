@@ -27,6 +27,11 @@ RUN mkdir -p /app/logs && \
     chown -R nobody:users /app && \
     chmod 755 /app/logs
 
+# Copy and set entrypoint script with correct permissions
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod 755 /usr/local/bin/entrypoint.sh && \
+    chown nobody:users /usr/local/bin/entrypoint.sh
+
 # Copy application code
 COPY --chown=nobody:users . .
 
@@ -38,10 +43,6 @@ ENV NODE_ENV=production
 
 # Define logs volume
 VOLUME ["/app/logs"]
-
-# Copy and set entrypoint script with correct permissions
-COPY entrypoint.sh /usr/local/bin/
-RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
