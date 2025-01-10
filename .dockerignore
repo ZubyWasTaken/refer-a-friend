@@ -1,0 +1,59 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+package-lock.json
+
+# Environment variables
+.env
+.env.*
+
+# IDE/Editor files
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Documentation
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# Test files
+test/
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Debug files
+.debug
+debug.log
+
+# Personal notes/todos
+TODO.md
+NOTES.md 

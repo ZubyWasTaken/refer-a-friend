@@ -22,16 +22,19 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --omit=dev
 
-# Create logs directory
+# Ensure subsequent commands run as root
+USER root
+
+# Create logs directory with correct permissions
 RUN mkdir -p /app/logs && \
     chmod 777 /app/logs && \
-    chown nobody:users /app/logs
+    chown 99:100 /app/logs
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
 RUN chmod 755 /usr/local/bin/entrypoint.sh
 
-# Copy application code
+# Copy application code with ownership set to nobody:users
 COPY --chown=nobody:users . .
 
 # Define non-sensitive environment variable
