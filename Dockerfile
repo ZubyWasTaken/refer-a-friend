@@ -23,7 +23,9 @@ COPY package*.json ./
 RUN npm install --omit=dev
 
 # Create logs directory
-RUN mkdir -p /app/logs
+RUN mkdir -p /app/logs && \
+    chmod 777 /app/logs && \
+    chown nobody:users /app/logs
 
 # Copy and set entrypoint script with correct permissions
 COPY entrypoint.sh /usr/local/bin/
@@ -35,7 +37,7 @@ COPY --chown=nobody:users . .
 # Define non-sensitive environment variable
 ENV NODE_ENV=production
 
-# Define logs volume
+# Define logs volume with specific permissions
 VOLUME ["/app/logs"]
 
 # Set entrypoint
