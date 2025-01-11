@@ -20,16 +20,6 @@ module.exports = {
       });
     }
 
-    // After server setup check, add invite limit check
-    const totalServerInvites = await Invite.countDocuments({ guild_id: interaction.guildId });
-
-    if (totalServerInvites >= 1000) {
-        return await interaction.editReply({
-            content: '❌ This server has reached its maximum invite capacity (1000 invites).\n' +
-                    'Please contact a server administrator to remove unused invites.',
-            flags: ['Ephemeral']
-        });
-    }
 
     try {
       const member = interaction.member;
@@ -37,62 +27,55 @@ module.exports = {
       const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
       const requestedUses = 1; // Force single-use invites
 
-      if (!isAdmin) {
-        // First check if they have any roles set up for invites
-        const currentInviteRoles = await Role.find({
+      // Get all invite roles the user has (including for admins)
+      const inviteRoles = await Role.find({
           role_id: { $in: Array.from(roles.keys()) },
           guild_id: interaction.guildId
-        });
+      });
 
-        // Check for existing database entries
-        const existingEntries = await User.find({
+      // Check for existing user entries
+      const existingEntries = await User.find({
           user_id: member.id,
           guild_id: interaction.guildId
+      });
+
+      // If not admin, do permission checks
+      if (!isAdmin) {
+          // Case 1: Never had permissions
+          if (inviteRoles.length === 0 && existingEntries.length === 0) {
+              return await interaction.editReply({
+                  content: '❌ **You need a role with invite permissions to use this command**\n\n' +
+                          'If you think this is a mistake, contact an administrator',
+                  flags: ['Ephemeral']
+              });
+          }
+      }
+
+      let currentInviteRole = null;
+      if (inviteRoles.length > 0) {
+          currentInviteRole = inviteRoles.reduce((prev, current) => 
+              (prev.max_invites > current.max_invites) ? prev : current
+          );
+      }
+
+      // Initialize user if they don't exist
+      if (currentInviteRole) {
+          await initializeUser(member.id, currentInviteRole.role_id, interaction.guildId);
+      }
+    
+
+      // Check remaining invites
+      const userInvites = await User.findOne({
+        user_id: member.id,
+        role_id: currentInviteRole.role_id,
+        guild_id: interaction.guildId
+      });
+
+      if (!userInvites || (userInvites.invites_remaining <= 0 && currentInviteRole.max_invites !== -1)) {
+        return await interaction.editReply({
+          content: 'You have no invites remaining.',
+          flags: ['Ephemeral']
         });
-
-        // Case 1: No roles and no existing data
-        if (currentInviteRoles.length === 0 && existingEntries.length === 0) {
-          return await interaction.editReply({
-            content: "❌ You don't have permission to create invites. You need a role with invite permissions.",
-            flags: ['Ephemeral']
-          });
-        }
-
-        // Case 2: Had permissions before (has data) but no current roles
-        if (currentInviteRoles.length === 0 && existingEntries.length > 0) {
-          // Clean up their old data
-          await User.deleteMany({
-            user_id: member.id,
-            guild_id: interaction.guildId
-          });
-
-          return await interaction.editReply({
-            content: "❌ Your invite permissions have been revoked. Contact an administrator if you think this is a mistake.",
-            flags: ['Ephemeral']
-          });
-        }
-
-        // Get the role with the highest max_invites
-        const highestInviteRole = currentInviteRoles.reduce((prev, current) => 
-          (prev.max_invites > current.max_invites) ? prev : current
-        );
-
-        // Initialize user if they don't exist
-        await initializeUser(member.id, highestInviteRole.role_id, interaction.guildId);
-
-        // Check remaining invites
-        const userInvites = await User.findOne({
-          user_id: member.id,
-          role_id: highestInviteRole.role_id,
-          guild_id: interaction.guildId
-        });
-
-        if (!userInvites || (userInvites.invites_remaining <= 0 && highestInviteRole.max_invites !== -1)) {
-          return await interaction.editReply({
-            content: 'You have no invites remaining.',
-            flags: ['Ephemeral']
-          });
-        }
       }
 
       if (isAdmin) {
@@ -190,15 +173,6 @@ module.exports = {
             break;  // Only decrement one invite from the first available role
           }
         }
-
-        // Customize message based on whether default role exists and is valid
-        // let roleMessage = '';
-        // if (serverConfig?.default_invite_role) {
-        //     const defaultRole = interaction.guild.roles.cache.get(serverConfig.default_invite_role);
-        //     if (defaultRole) {
-        //         roleMessage = `\nThis invite will grant the user the ${defaultRole} role.`;
-        //     }
-        // }
 
         // First send the log message
         await interaction.client.logger.logToChannel(interaction.guildId, 

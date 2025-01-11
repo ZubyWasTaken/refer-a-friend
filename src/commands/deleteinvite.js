@@ -1,5 +1,6 @@
-const { SlashCommandBuilder } = require('discord.js');
-const { Invite, ServerConfig } = require('../models/schemas');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Invite, User, Role, ServerConfig } = require('../models/schemas');
+const { initializeUser } = require('../utils/userManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,6 +25,46 @@ module.exports = {
     }
 
     try {
+      const member = interaction.member;
+      const roles = member.roles.cache;
+      const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+
+      // Get all invite roles the user has (including for admins)
+      const inviteRoles = await Role.find({
+          role_id: { $in: Array.from(roles.keys()) },
+          guild_id: interaction.guildId
+      });
+
+      // Check for existing user entries
+      const existingEntries = await User.find({
+          user_id: member.id,
+          guild_id: interaction.guildId
+      });
+
+      // If not admin, do permission checks
+      if (!isAdmin) {
+          // Case 1: Never had permissions
+          if (inviteRoles.length === 0 && existingEntries.length === 0) {
+              return await interaction.editReply({
+                  content: '❌ **You need a role with invite permissions to use this command**\n\n' +
+                          'If you think this is a mistake, contact an administrator',
+                  flags: ['Ephemeral']
+              });
+          }
+      }
+
+      let currentInviteRole = null;
+    if (inviteRoles.length > 0) {
+        currentInviteRole = inviteRoles.reduce((prev, current) => 
+            (prev.max_invites > current.max_invites) ? prev : current
+        );
+    }
+
+    // Initialize user if they don't exist
+    if (currentInviteRole) {
+        await initializeUser(member.id, currentInviteRole.role_id, interaction.guildId);
+    }
+
       const inviteNumber = interaction.options.getInteger('number');
 
       // Get user's invites

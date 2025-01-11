@@ -25,27 +25,41 @@ module.exports = {
         const roles = member.roles.cache;
         const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
-        // If not admin, check for invite roles
-        if (!isAdmin) {
-            // Get all invite roles the user has
-            const inviteRoles = await Role.find({
-                role_id: { $in: Array.from(roles.keys()) },
-                guild_id: interaction.guildId
-            });
+        // Get all invite roles the user has (including for admins)
+        const inviteRoles = await Role.find({
+            role_id: { $in: Array.from(roles.keys()) },
+            guild_id: interaction.guildId
+        });
 
-            // Check if user has any invite roles
-            if (inviteRoles.length === 0) {
+        // Check for existing user entries
+        const existingEntries = await User.find({
+            user_id: member.id,
+            guild_id: interaction.guildId
+        });
+
+        // If not admin, do permission checks
+        if (!isAdmin) {
+            // Case 1: Never had permissions
+            if (inviteRoles.length === 0 && existingEntries.length === 0) {
                 return await interaction.editReply({
-                    content: "❌ You don't have permission to use this command. You need a role that has been given invite permissions.",
+                    content: '❌ **You need a role with invite permissions to use this command**\n\n' +
+                            'If you think this is a mistake, contact an administrator',
                     flags: ['Ephemeral']
                 });
             }
-
-            // Initialize user for each role they have
-            for (const role of inviteRoles) {
-                await initializeUser(member.id, role.role_id, interaction.guildId);
-            }
         }
+
+        let currentInviteRole = null;
+      if (inviteRoles.length > 0) {
+          currentInviteRole = inviteRoles.reduce((prev, current) => 
+              (prev.max_invites > current.max_invites) ? prev : current
+          );
+      }
+
+      // Initialize user if they don't exist
+      if (currentInviteRole) {
+          await initializeUser(member.id, currentInviteRole.role_id, interaction.guildId);
+      }
 
         // Get user's invite information
         const userInvites = await User.find({
