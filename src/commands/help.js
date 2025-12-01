@@ -65,7 +65,7 @@ module.exports = {
 
 \`/addinvites\` - Add invites to a user
 • Give additional invites to specific users
-• Must have a role with invite permissions
+• Target user must have a role with invite permissions
 
 \`/removeinvites\` - Remove invites from a user
 • Deduct invites from specific users
