@@ -56,24 +56,17 @@ module.exports = {
                 guild_id: interaction.guildId
             });
 
-            // Update all users who had this role configured
-            await User.updateMany(
-                { 
-                    guild_id: interaction.guildId,
-                    role_id: selectedRole.id 
-                },
-                { 
-                    $set: { 
-                        invites_remaining: 0,
-                        role_id: null 
-                    }
-                }
-            );
+            // Delete all user records for this role (instead of setting to null which causes issues)
+            // This is cleaner and avoids potential null-related bugs in other queries
+            const deletedCount = await User.deleteMany({
+                guild_id: interaction.guildId,
+                role_id: selectedRole.id
+            });
 
             await interaction.editReply({
                 content: `✅ Successfully removed invite configuration from role ${selectedRole}.\n\n` +
-                        `ℹ️ Note: All users with this role have had their invite limits reset. ` +
-                        `Use \`/setinvites\` to set new invite limits if needed.`
+                        `ℹ️ Note: Removed invite records for ${deletedCount.deletedCount} user(s) with this role. ` +
+                        `Use \`/addinvites\` to grant invites if needed.`
             });
 
             // Log the action

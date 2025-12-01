@@ -33,11 +33,14 @@ module.exports = {
             });
         }
 
+        // Store logsChannelId for later use
+        const logsChannelId = serverConfig.logs_channel_id;
+
         // Check if logs channel exists but don't block the reset
         let hasValidLogsChannel = false;
-        if (serverConfig.logs_channel_id) {
+        if (logsChannelId) {
             try {
-                const logsChannel = await interaction.guild.channels.fetch(serverConfig.logs_channel_id);
+                const logsChannel = await interaction.guild.channels.fetch(logsChannelId);
                 hasValidLogsChannel = !!logsChannel;
             } catch (error) {
                 if (error.code === 10003) { // Unknown Channel error
@@ -88,10 +91,6 @@ module.exports = {
                     content: '🔄 Resetting server data...',
                     components: []
                 });
-
-                // Get logging channel before deleting config
-                const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-                const logsChannelId = serverConfig?.logs_channel_id;
 
                 // Get all bot invites from the database
                 const botInvites = await Invite.find({ guild_id: interaction.guildId });

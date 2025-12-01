@@ -103,16 +103,19 @@ module.exports = {
       try {
         // Fetch fresh list of guild invites
         const guildInvites = await interaction.guild.invites.fetch();
-        
+
         const discordInvite = guildInvites.get(inviteToDelete.invite_code);
-        
+
+        let discordDeletionSuccessful = false;
+
         if (discordInvite) {
             // Found the invite, try to delete it
             try {
                 // Force fetch the specific invite to ensure it's fresh
                 const freshInvite = await interaction.guild.invites.fetch(inviteToDelete.invite_code);
                 await freshInvite.delete('User requested deletion');
-                
+                discordDeletionSuccessful = true;
+
                 // Log successful Discord invite deletion
                 interaction.client.logger.logToFile("Discord invite deleted", "invite_delete", {
                     guildId: interaction.guildId,
@@ -124,14 +127,28 @@ module.exports = {
             } catch (deleteError) {
                 console.error(`Error deleting invite:`, deleteError);
                 if (deleteError.code === 10006) {
+                    // Invite not found = already deleted
                     console.log(`Invite ${inviteToDelete.invite_code} not found in Discord`);
+                    discordDeletionSuccessful = true; // Treat as success since it doesn't exist
                 } else {
+                    // Other error - actual failure
                     return await interaction.editReply({
-                        content: '❌ Failed to delete the invite. Please try again or contact an administrator.',
+                        content: '❌ Failed to delete the invite from Discord. Please try again or contact an administrator.',
                         flags: ['Ephemeral']
                     });
                 }
             }
+        } else {
+            // Not found in guild invites = already deleted
+            discordDeletionSuccessful = true;
+        }
+
+        // Only proceed if Discord deletion was successful
+        if (!discordDeletionSuccessful) {
+            return await interaction.editReply({
+                content: '❌ Could not delete the invite. Please try again.',
+                flags: ['Ephemeral']
+            });
         }
 
         // Update the cache
@@ -140,34 +157,60 @@ module.exports = {
             guildInvitesCache.delete(inviteToDelete.invite_code);
         }
 
-        // Delete from database
+        // Refund the invite to the user BEFORE deleting from database
+        // This ensures we don't lose the invite if refund fails
+        const userRoles = await User.find({
+            user_id: interaction.user.id,
+            guild_id: interaction.guildId
+        });
+
+        // Check if user has unlimited invites
+        const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
+
+        if (!hasUnlimitedInvites && userRoles.length > 0) {
+            // Find the role with the lowest invite count to refund to
+            const roleToRefund = userRoles.reduce((lowest, current) => {
+                if (current.invites_remaining >= 0) {
+                    if (!lowest || current.invites_remaining < lowest.invites_remaining) {
+                        return current;
+                    }
+                }
+                return lowest;
+            }, null);
+
+            if (roleToRefund) {
+                await User.findOneAndUpdate(
+                    { _id: roleToRefund._id },
+                    { $inc: { invites_remaining: 1 } }
+                );
+
+                // Log the refund
+                interaction.client.logger.logToFile("Invite refunded", "invite_refund", {
+                    guildId: interaction.guildId,
+                    guildName: interaction.guild.name,
+                    userId: interaction.user.id,
+                    username: interaction.user.tag,
+                    inviteCode: inviteToDelete.invite_code,
+                    message: "Invite credit refunded to user"
+                });
+            }
+        }
+
+        // Delete from database AFTER successful refund
         await Invite.findOneAndDelete({
             invite_code: inviteToDelete.invite_code,
             guild_id: interaction.guildId
         });
 
-        // Verify deletion by trying to fetch the invite
-        try {
-            const verifyInvite = await interaction.guild.invites.fetch(inviteToDelete.invite_code);
-            if (verifyInvite) {
-                console.error(`Invite still exists after deletion attempt`);
-                // One final deletion attempt
-                await verifyInvite.delete('User requested deletion - final attempt');
-            }
-        } catch (verifyError) {
-            // This error is expected if the invite is truly deleted
-            console.log(`Verified invite deletion - invite ${inviteToDelete.invite_code} no longer exists`);
-
-            // Log successful database deletion
-            interaction.client.logger.logToFile("Invite deleted from database", "invite_delete", {
-                guildId: interaction.guildId,
-                guildName: interaction.guild.name,
-                userId: interaction.user.id,
-                username: interaction.user.tag,
-                inviteCode: inviteToDelete.invite_code,
-                message: "Successfully removed from database"
-            });
-        }
+        // Log successful database deletion
+        interaction.client.logger.logToFile("Invite deleted from database", "invite_delete", {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag,
+            inviteCode: inviteToDelete.invite_code,
+            message: "Successfully removed from database"
+        });
 
       } catch (fetchError) {
         console.error('Error in delete process:', fetchError);
@@ -188,7 +231,7 @@ module.exports = {
 
       await interaction.editReply({
         content: `✅ Deleted invite: ${inviteToDelete.link}` +
-        `\n\nUse \`/invites\` to see your updated invites list and balance.`
+        `\n\n💰 Your invite has been refunded.\nUse \`/invites\` to see your updated invites list and balance.`
       });
 
     } catch (error) {

@@ -85,13 +85,13 @@ module.exports = {
             ]);
 
             // Log the results
-            interaction.client.logger.logToFile(`Invite check results for ${targetUser.tag} (${targetUser.id}): remaining invites ${userInvites[0].totalInvitesRemaining} active invites ${activeInvites.length}`, "invite_check", {
+            const totalInvitesRemaining = userInvites.length > 0 ? userInvites[0].totalInvitesRemaining : 0;
+            interaction.client.logger.logToFile(`Invite check results for ${targetUser.tag} (${targetUser.id}): remaining invites ${totalInvitesRemaining} active invites ${activeInvites.length}`, "invite_check", {
                 guildId: interaction.guildId,
                 guildName: interaction.guild.name,
                 userId: interaction.user.id,
                 username: interaction.user.tag,
-                message: `Remaining invites: ${isTargetAdmin ? 'Unlimited' : 
-                    userInvites.length > 0 ? userInvites[0].totalInvitesRemaining : 0}, ` +
+                message: `Remaining invites: ${isTargetAdmin ? 'Unlimited' : totalInvitesRemaining}, ` +
                     `Active invites: ${activeInvites.length}`
             });
 

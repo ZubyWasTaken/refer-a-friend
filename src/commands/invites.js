@@ -96,10 +96,11 @@ module.exports = {
 
 
         // Calculate total remaining invites
-        const totalInvites = userInvites.reduce((sum, role) => 
-            role.invites_remaining === -1 ? -1 : sum + role.invites_remaining, 
-            0
-        );
+        // Check if ANY role has unlimited invites first
+        const hasUnlimited = userInvites.some(role => role.invites_remaining === -1);
+        const totalInvites = hasUnlimited
+            ? -1
+            : userInvites.reduce((sum, role) => sum + role.invites_remaining, 0);
 
         let response = '**Your Invite Balance:**\n';
         if (totalInvites === -1) {

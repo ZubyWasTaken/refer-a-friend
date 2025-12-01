@@ -67,25 +67,32 @@ module.exports = {
                 });
             }
 
-            // Check if user has enough invites to remove
-            if (userInvites.invites_remaining < amount) {
-                return await interaction.editReply({
-                    content: `❌ ${targetUser.tag} only has ${userInvites.invites_remaining} invites remaining. Cannot remove ${amount}.`
-                });
-            }
-
-            // Update user's invites
+            // Update user's invites with atomic check to prevent race conditions
+            // The $gte check ensures we don't go negative even if concurrent operations occur
             const updatedUser = await User.findOneAndUpdate(
                 {
                     user_id: targetUser.id,
                     role_id: highestInviteRole.role_id,
-                    guild_id: interaction.guildId
+                    guild_id: interaction.guildId,
+                    invites_remaining: { $gte: amount }  // Atomic check
                 },
                 {
                     $inc: { invites_remaining: -amount }
                 },
                 { new: true }
             );
+
+            // If update failed, user doesn't have enough invites
+            if (!updatedUser) {
+                const currentInvites = await User.findOne({
+                    user_id: targetUser.id,
+                    role_id: highestInviteRole.role_id,
+                    guild_id: interaction.guildId
+                });
+                return await interaction.editReply({
+                    content: `❌ ${targetUser.tag} only has ${currentInvites?.invites_remaining || 0} invites remaining. Cannot remove ${amount}.`
+                });
+            }
 
             // Get total invites across all roles after update
             const totalInvites = await User.aggregate([

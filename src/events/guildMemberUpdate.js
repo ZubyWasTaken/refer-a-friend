@@ -4,8 +4,17 @@ const { User, Role } = require('../models/schemas');
 module.exports = {
     name: Events.GuildMemberUpdate,
     async execute(oldMember, newMember) {
-        // Only process if roles changed
-        if (oldMember.roles.cache.size === newMember.roles.cache.size) return;
+        // Check if roles actually changed (not just size comparison)
+        // This handles role swaps where size stays the same but roles differ
+        const oldRoleIds = new Set(oldMember.roles.cache.keys());
+        const newRoleIds = new Set(newMember.roles.cache.keys());
+
+        // If roles are identical, no need to process
+        const rolesChanged = oldRoleIds.size !== newRoleIds.size ||
+            [...oldRoleIds].some(id => !newRoleIds.has(id)) ||
+            [...newRoleIds].some(id => !oldRoleIds.has(id));
+
+        if (!rolesChanged) return;
 
         try {
             // Get all configured roles for this guild
@@ -27,14 +36,25 @@ module.exports = {
                     guild_id: newMember.guild.id
                 });
 
-                // Create a new record with unlimited invites
-                await User.create({
-                    user_id: newMember.id,
-                    guild_id: newMember.guild.id,
-                    role_id: addedRoles.first()?.id || newMember.roles.cache.first().id,
-                    invites_remaining: -1
-                });
-                
+                // Find the unlimited role to use as role_id
+                const unlimitedRoleConfig = configuredRoles.find(r =>
+                    newMember.roles.cache.has(r.role_id) && r.max_invites === -1
+                );
+
+                if (unlimitedRoleConfig) {
+                    // Create a new record with unlimited invites
+                    await User.create({
+                        user_id: newMember.id,
+                        guild_id: newMember.guild.id,
+                        role_id: unlimitedRoleConfig.role_id,
+                        invites_remaining: -1
+                    });
+                } else {
+                    // Edge case: hasUnlimitedRole was true but we can't find it
+                    // This could happen due to timing issues - log it
+                    console.error(`Unlimited role detected for ${newMember.user.tag} but config not found`);
+                }
+
                 return; // Exit since we've set to unlimited
             }
 
@@ -100,17 +120,12 @@ module.exports = {
 
                         for (const roleConfig of userConfiguredRoles) {
                             const existingRecord = existingRecords.find(r => r.role_id === roleConfig.role_id);
-                            
+
                             if (existingRecord) {
-                                // Update existing record
-                                await User.findOneAndUpdate(
-                                    {
-                                        _id: existingRecord._id
-                                    },
-                                    {
-                                        invites_remaining: roleConfig.max_invites
-                                    }
-                                );
+                                // DO NOT update existing record's invite balance
+                                // User's current balance should be preserved
+                                // Only create new records for newly added roles
+                                console.log(`Preserving invite balance for ${newMember.user.tag} role ${roleConfig.role_id}`);
                             } else {
                                 // Create new record only if one doesn't exist
                                 await User.create({

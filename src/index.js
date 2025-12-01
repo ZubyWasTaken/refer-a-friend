@@ -1,11 +1,28 @@
 require("dotenv").config();
-const { Client, Collection, GatewayIntentBits } = require("discord.js");
+const { Client, Collection, GatewayIntentBits, ActivityType } = require("discord.js");
 const path = require("path");
 const fs = require("fs");
-const { initDatabase } = require("./database/init");
+const { initDatabase, closeConnection } = require("./database/init");
 const Logger = require("./utils/logger");
 const { isSetupComplete } = require("./utils/setupCheck");
 const { Invite } = require('./models/schemas');
+const { TIME } = require('./utils/constants');
+
+// Validate required environment variables on startup
+const requiredEnvVars = ['BOT_TOKEN', 'CLIENT_ID', 'APPLICATION_ID', 'MONGODB_URI'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ ERROR: Missing required environment variables:');
+  missingEnvVars.forEach(varName => {
+    console.error(`   - ${varName}`);
+  });
+  console.error('\nPlease create a .env file with all required variables.');
+  console.error('See .env.example for reference (if available).\n');
+  process.exit(1);
+}
+
+console.log('✅ Environment variables validated');
 
 // Create a new client instance
 const client = new Client({
@@ -22,23 +39,38 @@ client.invites = new Collection();
 // Add this near the top where you initialize other client properties
 client.recentlyDeletedInvites = new Collection();
 
+// Clean up old deleted invite entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [inviteCode, invite] of client.recentlyDeletedInvites.entries()) {
+    if (now - invite.timestamp > TIME.DELETED_INVITE_CACHE_MAX_AGE) {
+      client.recentlyDeletedInvites.delete(inviteCode);
+    }
+  }
+}, TIME.DELETED_INVITE_CLEANUP_INTERVAL);
+
 // Fetch and cache invites when bot joins a guild or starts up
-client.on("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}!`);
+// Discord.js 14.x: Use 'ready' event with once: true for initialization
+client.once("ready", async (c) => {
+  console.log(`✅ Logged in as ${c.user.tag}`);
+  console.log(`   User ID: ${c.user.id}`);
+  console.log(`   Servers: ${c.guilds.cache.size}`);
 
   // Log the bot's presence
   client.logger.logToFile("Bot logged in", "bot_logged_in", {
     guildId: null,
     guildName: null,
-    userId: client.user.id,
-    username: client.user.tag
+    userId: c.user.id,
+    username: c.user.tag
   });
 
-  // Set the bot's presence
-  client.user.setPresence({
-    activities: [{ 
+  // Discord.js 14.x: Set the bot's presence with ActivityType enum
+  // Note: Using number (3) still works but enum is preferred
+  c.user.setPresence({
+    activities: [{
       name: '/help for commands',
-      type: 3 // WATCHING
+      type: ActivityType.Watching
     }],
     status: 'online'
   });
@@ -147,7 +179,8 @@ client.on("inviteDelete", async (invite) => {
 
         if (inviteToDelete) {
             // Store ALL the invite info before deleting
-            client.recentlyDeletedInvites.set(invite.guild.id, {
+            // Use invite CODE as key (not guild ID) to track multiple deleted invites per guild
+            client.recentlyDeletedInvites.set(invite.code, {
                 code: invite.code,
                 timestamp: Date.now(),
                 guildId: invite.guild.id,
@@ -161,14 +194,6 @@ client.on("inviteDelete", async (invite) => {
                 invite_code: invite.code,
                 guild_id: invite.guild.id
             });
-
-            // // Log the deletion
-            // await client.logger.logToChannel(invite.guild.id,
-            //     `🗑️ **Invite Deleted**\n` +
-            //     `Invite Code: \`${invite.code}\`\n` +
-            //     `Originally Created By: <@${inviteToDelete.user_id}>\n` +
-            //     `Link: ${inviteToDelete.link}`
-            // );
 
             // Log the action
             client.logger.logToFile("Invite deleted", "invite_deleted", {
@@ -202,10 +227,10 @@ client.on("inviteDelete", async (invite) => {
 // Attach logger to client
 client.logger = new Logger(client);
 
-// Clean logs older than 30 days every 24 hours
+// Clean old logs periodically
 setInterval(() => {
-    client.logger.cleanOldLogs(30);
-}, 24 * 60 * 60 * 1000);
+    client.logger.cleanOldLogs(TIME.LOG_RETENTION_DAYS);
+}, TIME.LOG_CLEANUP_INTERVAL);
 
 // Load commands and events
 client.commands = new Collection();
@@ -235,22 +260,112 @@ for (const file of eventFiles) {
   }
 }
 
-// Handle interactions
+// Handle interactions (Discord.js 14.x best practices)
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
-  if (!command) return;
+  if (!command) {
+    console.warn(`⚠️  Command not found: ${interaction.commandName}`);
+    return;
+  }
 
   try {
     await command.execute(interaction);
   } catch (error) {
-    console.error(error);
-    await interaction.editReply({
-      content: "There was an error executing this command!",
-      flags: ["Ephemeral"],
+    console.error(`❌ Error executing command ${interaction.commandName}:`, error);
+
+    // Log the error for debugging
+    client.logger?.logToFile(`Error executing command: ${error.message}`, "error", {
+      guildId: interaction.guildId,
+      guildName: interaction.guild?.name,
+      userId: interaction.user.id,
+      username: interaction.user.tag,
+      error: error.stack
     });
+
+    // Determine appropriate error message based on error type
+    let errorMessage = "There was an error executing this command!";
+
+    if (error.name === 'MongooseError' || error.name === 'MongoError') {
+      errorMessage = "Database error occurred. Please try again later.";
+    } else if (error.code === 10062) { // Discord API: Unknown interaction
+      console.log('Interaction token expired or already acknowledged');
+      return; // Can't respond to expired interactions
+    } else if (error.code === 50013) { // Discord API: Missing permissions
+      errorMessage = "I don't have permission to do that!";
+    }
+
+    // Try to respond to the user
+    try {
+      // Check if we can still respond
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: errorMessage,
+          flags: ["Ephemeral"],
+        });
+      } else {
+        await interaction.reply({
+          content: errorMessage,
+          flags: ["Ephemeral"],
+        });
+      }
+    } catch (replyError) {
+      // If we can't reply, just log it
+      console.error('Failed to send error message to user:', replyError.message);
+    }
   }
+});
+
+// Graceful shutdown handler (Discord.js 14.x best practice)
+async function shutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  try {
+    // Destroy the Discord client first
+    await client.destroy();
+    console.log('✅ Discord client destroyed');
+
+    // Close mongoose connection
+    await closeConnection();
+    console.log('✅ Database connection closed');
+
+    console.log('✅ Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Handle various shutdown signals (best practice for production)
+// Centralized here to avoid conflicts with multiple handlers
+process.on('SIGINT', () => shutdown('SIGINT'));   // Ctrl+C
+process.on('SIGTERM', () => shutdown('SIGTERM')); // Docker/PM2 stop
+process.on('SIGUSR2', () => shutdown('SIGUSR2')); // nodemon restart
+
+// Handle uncaught errors
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
+  client.logger?.logToFile(`Unhandled promise rejection: ${error.message}`, "error", {
+    guildId: null,
+    guildName: null,
+    userId: null,
+    username: null,
+    error: error.stack
+  });
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  client.logger?.logToFile(`Uncaught exception: ${error.message}`, "error", {
+    guildId: null,
+    guildName: null,
+    userId: null,
+    username: null,
+    error: error.stack
+  });
+  shutdown('UNCAUGHT_EXCEPTION');
 });
 
 client.login(process.env.BOT_TOKEN);

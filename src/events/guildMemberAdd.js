@@ -1,5 +1,6 @@
 const { Collection } = require('discord.js');
 const { Invite, JoinTracking, ServerConfig } = require('../models/schemas');
+const { TIME } = require('../utils/constants');
 
 module.exports = {
     name: 'guildMemberAdd',
@@ -7,27 +8,29 @@ module.exports = {
         try {
             const cachedInvites = member.client.invites.get(member.guild.id);
             const newInvites = await member.guild.invites.fetch();
-            
+
             let usedInvite = null;
             let usedInviteCode = null;
             let inviteInfo = null;
 
-            // Check the invite delete event log for the most recent deletion
-            const recentlyDeletedInvite = member.client.recentlyDeletedInvites?.get(member.guild.id);
-            if (recentlyDeletedInvite && Date.now() - recentlyDeletedInvite.timestamp < 5000) { // within 5 seconds
-                usedInviteCode = recentlyDeletedInvite.code;
-                inviteInfo = recentlyDeletedInvite;
-            }
-
-            // If we didn't find a recently deleted invite, check for missing invites
-            if (!usedInviteCode && cachedInvites) {
+            // First check for missing invites (invite was used and may have been deleted)
+            if (cachedInvites) {
                 for (const [code, invite] of cachedInvites) {
                     if (!newInvites.has(code)) {
                         usedInviteCode = code;
-                        inviteInfo = await Invite.findOne({ 
-                            invite_code: code,
-                            guild_id: member.guild.id
-                        });
+
+                        // Check recently deleted invites first (using invite code as key)
+                        const recentlyDeletedInvite = member.client.recentlyDeletedInvites?.get(code);
+                        if (recentlyDeletedInvite && Date.now() - recentlyDeletedInvite.timestamp < TIME.DELETED_INVITE_MATCH_WINDOW) {
+                            inviteInfo = recentlyDeletedInvite;
+                        } else {
+                            // Fall back to database lookup
+                            inviteInfo = await Invite.findOne({
+                                invite_code: code,
+                                guild_id: member.guild.id
+                            });
+                        }
+
                         if (inviteInfo) break;
                     }
                 }

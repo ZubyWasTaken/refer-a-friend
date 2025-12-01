@@ -156,70 +156,60 @@ module.exports = {
                 }
             }
 
-            let updateData = {};
-            let successMessage = '';
+            // Only handle logschannel and botchannel here
+            // defaultrole is already fully handled above
+            if (subcommand !== 'defaultrole') {
+                let updateData = {};
+                let successMessage = '';
 
-            switch (subcommand) {
-                case 'logschannel':
-                    const logsChannel = interaction.options.getChannel('channel');
-                    updateData = { logs_channel_id: logsChannel.id };
-                    successMessage = `✅ Logs channel updated to ${logsChannel}`;
-                    
-                    // Log the logs channel change
-                    interaction.client.logger.logToFile(`Logs channel changed to ${logsChannel.name}`, "settings", {
-                        guildId: interaction.guildId,
-                        guildName: interaction.guild.name,
-                        userId: interaction.user.id,
-                        username: interaction.user.tag
-                    });
-                    break;
+                switch (subcommand) {
+                    case 'logschannel':
+                        const logsChannel = interaction.options.getChannel('channel');
+                        updateData = { logs_channel_id: logsChannel.id };
+                        successMessage = `✅ Logs channel updated to ${logsChannel}`;
 
-                case 'botchannel':
-                    const botChannel = interaction.options.getChannel('channel');
-                    updateData = { bot_channel_id: botChannel.id };
-                    successMessage = `✅ Bot commands channel updated to ${botChannel}`;
-                    
-                    // Log the bot channel change
-                    interaction.client.logger.logToFile(`Bot commands channel changed to ${botChannel.name}`, "settings", {
-                        guildId: interaction.guildId,
-                        guildName: interaction.guild.name,
-                        userId: interaction.user.id,
-                        username: interaction.user.tag
-                    });
-                    break;
+                        // Log the logs channel change
+                        interaction.client.logger.logToFile(`Logs channel changed to ${logsChannel.name}`, "settings", {
+                            guildId: interaction.guildId,
+                            guildName: interaction.guild.name,
+                            userId: interaction.user.id,
+                            username: interaction.user.tag
+                        });
+                        break;
 
-                case 'defaultrole':
-                    const defaultRole = interaction.options.getRole('role');
-                    updateData = { default_invite_role: defaultRole.id };
-                    successMessage = `✅ Default invite role updated to ${defaultRole}`;
-                    
-                    // Log the default role change
-                    interaction.client.logger.logToFile(`Default invite role changed to ${defaultRole.name}`, "settings", {
-                        guildId: interaction.guildId,
-                        guildName: interaction.guild.name,
-                        userId: interaction.user.id,
-                        username: interaction.user.tag
-                    });
-                    break;
+                    case 'botchannel':
+                        const botChannel = interaction.options.getChannel('channel');
+                        updateData = { bot_channel_id: botChannel.id };
+                        successMessage = `✅ Bot commands channel updated to ${botChannel}`;
+
+                        // Log the bot channel change
+                        interaction.client.logger.logToFile(`Bot commands channel changed to ${botChannel.name}`, "settings", {
+                            guildId: interaction.guildId,
+                            guildName: interaction.guild.name,
+                            userId: interaction.user.id,
+                            username: interaction.user.tag
+                        });
+                        break;
+                }
+
+                // Update the server config
+                await ServerConfig.findOneAndUpdate(
+                    { guild_id: interaction.guildId },
+                    updateData,
+                    { upsert: true }
+                );
+
+                // Log the change
+                await interaction.client.logger.logToChannel(interaction.guildId,
+                    `⚙️ **Bot Settings Updated**\n` +
+                    `Admin: <@${interaction.user.id}>\n` +
+                    `Change: ${successMessage}`
+                );
+
+                await interaction.editReply({
+                    content: successMessage
+                });
             }
-
-            // Update the server config
-            await ServerConfig.findOneAndUpdate(
-                { guild_id: interaction.guildId },
-                updateData,
-                { upsert: true }
-            );
-
-            // Log the change
-            await interaction.client.logger.logToChannel(interaction.guildId,
-                `⚙️ **Bot Settings Updated**\n` +
-                `Admin: <@${interaction.user.id}>\n` +
-                `Change: ${successMessage}`
-            );
-
-            await interaction.editReply({
-                content: successMessage
-            });
 
         } catch (error) {
             console.error('Error changing defaults:', error);

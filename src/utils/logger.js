@@ -1,6 +1,7 @@
 const { ServerConfig } = require('../models/schemas');
 const path = require("path");
 const fs = require("fs");
+const fsPromises = require("fs").promises;
 
 // Ensure the logs directory exists
 const logsDir = path.join(__dirname, "..", "..", "logs");
@@ -55,7 +56,7 @@ class Logger {
      * @param {string} [options.channelName] - Channel name (for channel-related logs)
      * @param {string} [options.maxInvites] - Maximum invites (for role settings)
      */
-    logToFile(message, type, options = {}) {
+    async logToFile(message, type, options = {}) {
         const {
             guildId,
             guildName,
@@ -68,7 +69,7 @@ class Logger {
         } = options;
 
         // Create guild-specific or general bot log file
-        const fileName = guildId && guildName 
+        const fileName = guildId && guildName
             ? `guild_${guildName.replace(/[^a-z0-9]/gi, '_')}_${guildId}.log`
             : 'bot.log';
         const filePath = path.join(logsDir, fileName);
@@ -78,53 +79,53 @@ class Logger {
         const userInfo = username && userId ? `user: ${username} (${userId}) ` : "";
         const inviteInfo = inviteCode ? `invite: ${inviteCode} ` : "";
         const roleInfo = roleName ? `role: ${roleName} ` : "";
-        
+
         const logMessage = `${timestamp} [${type.toUpperCase()}] - ${userInfo}${inviteInfo}${roleInfo}${message}\n`;
 
-        // Append to log file
-        fs.appendFile(filePath, logMessage, (err) => {
-            if (err) {
-                console.error("Error writing to log file:", err);
-                // Write to fallback error log
-                const errorPath = path.join(logsDir, 'error.log');
-                fs.appendFile(errorPath, 
-                    `${timestamp} [ERROR] - Failed to write to ${fileName}: ${err.message}\n`,
-                    () => {}
+        try {
+            // Append to log file using promises
+            await fsPromises.appendFile(filePath, logMessage);
+        } catch (err) {
+            console.error("Error writing to log file:", err);
+            // Write to fallback error log
+            const errorPath = path.join(logsDir, 'error.log');
+            try {
+                await fsPromises.appendFile(errorPath,
+                    `${timestamp} [ERROR] - Failed to write to ${fileName}: ${err.message}\n`
                 );
+            } catch (errorLogErr) {
+                console.error("Error writing to error log:", errorLogErr);
             }
-        });
+        }
     }
 
     /**
      * Clean old log files
      * @param {number} daysToKeep - Number of days to keep logs for
      */
-    cleanOldLogs(daysToKeep = 30) {
+    async cleanOldLogs(daysToKeep = 30) {
         const now = Date.now();
         const maxAge = daysToKeep * 24 * 60 * 60 * 1000;
 
-        fs.readdir(logsDir, (err, files) => {
-            if (err) {
-                console.error("Error reading logs directory:", err);
-                return;
-            }
+        try {
+            const files = await fsPromises.readdir(logsDir);
 
-            files.forEach(file => {
+            for (const file of files) {
                 const filePath = path.join(logsDir, file);
-                fs.stat(filePath, (err, stats) => {
-                    if (err) {
-                        console.error(`Error getting stats for ${file}:`, err);
-                        return;
-                    }
+                try {
+                    const stats = await fsPromises.stat(filePath);
 
                     if (now - stats.mtime.getTime() > maxAge) {
-                        fs.unlink(filePath, err => {
-                            if (err) console.error(`Error deleting ${file}:`, err);
-                        });
+                        await fsPromises.unlink(filePath);
+                        console.log(`Deleted old log file: ${file}`);
                     }
-                });
-            });
-        });
+                } catch (err) {
+                    console.error(`Error processing ${file}:`, err);
+                }
+            }
+        } catch (err) {
+            console.error("Error cleaning old logs:", err);
+        }
     }
 }
 
