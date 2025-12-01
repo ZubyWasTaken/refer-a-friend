@@ -36,51 +36,50 @@ module.exports = {
                     name: '🛠️ Setup Commands (Admin)',
                     value: `
 \`/setup\` - Initial bot setup
-• Sets logs channel for bot activity
-• Sets bot channel for command usage
-• Sets default role for new invites
+• Configure logs channel for bot activity
+• Configure bot commands channel
+• Optionally set default role for new members
 
 \`/changedefaults\` - Modify server settings
-• \`logschannel\` - Change where bot logs appear
-• \`botchannel\` - Change where commands can be used
-• \`defaultrole\` - Change/remove default invite role
+• \`logschannel\` - Change logs channel
+• \`botchannel\` - Change bot commands channel
+• \`defaultrole\` - Set or remove default invite role
 
 \`/currentconfig\` - View server configuration
-• See all configured channels
-• View role invite limits
-• Check current settings
+• Display all configured channels
+• Show role invite limits
+• View current settings
                     `
                 },
                 {
                     name: '⚙️ Invite Management (Admin)',
                     value: `
-\`/setinvites\` - Configure invite limits for roles
-• Set how many invites a role can create
-• Set unlimited invites for specific roles
+\`/setrole\` - Set invite limits for roles
+• Assign max invites for a specific role
+• Use -1 for unlimited invites
+• Automatically applies to existing members
 
-\`/setrole\` - Set role invite limits
-• Configure max invites for a role
-• Set unlimited invites (-1) for a role
-
-\`/unsetrole\` - Remove role configuration
+\`/unsetrole\` - Remove role invite configuration
 • Remove invite limits from a role
-• View configured roles list
+• Stops tracking that role's invites
 
-\`/addinvites\` - Give invites to users
-• Add invites to specific users
-• Specify role-based invite allocation
+\`/addinvites\` - Add invites to a user
+• Give additional invites to specific users
+• Must have a role with invite permissions
 
-\`/removeinvites\` - Remove invites from users
-• Remove invites from specific users
-• Manage invite balances
+\`/removeinvites\` - Remove invites from a user
+• Deduct invites from specific users
+• Manage invite balances manually
 
-\`/checkinvites\` - Monitor invite usage
-• Check any user's invite balance
-• View their active invite links
+\`/checkinvites\` - Check user's invites
+• View any user's remaining invite balance
+• See their active invite links
+• Monitor invite usage
 
-\`/reset\` - Reset bot data
-• Clear all bot data for the server
-• **Use with caution!**
+\`/reset\` - Reset all bot data
+• Clears all bot configuration and data
+• Requires server re-setup
+• **⚠️ Use with extreme caution!**
                     `
                 }
             );
@@ -90,21 +89,24 @@ module.exports = {
         embed.addFields({
             name: '👥 User Commands',
             value: `
-\`/createinvite\` - Create a new invite
-• Creates a single-use invite link
-• Shows your remaining invite balance
+\`/createinvite\` - Create a new invite link
+• Creates a single-use invite to the server
+• Deducts from your invite balance
+• Shows remaining invites after creation
 
-\`/invites\` - Check your invites
-• View your remaining invite balance
+\`/invites\` - View your invites
+• Check your remaining invite balance
 • See all your active invite links
+• Track invite usage
 
-\`/deleteinvite\` - Remove a specific invite
-• Delete specific invite links
-• This does **NOT** refund you any invite credits
+\`/deleteinvite\` - Delete an invite link
+• Remove a specific invite you created
+• **Note:** Does NOT refund invite credits
+• Helps manage your active invites
 
 \`/help\` - Show this help menu
-• View all available commands
-• See command descriptions
+• Display all available commands
+• See detailed command descriptions
             `
         });
 
