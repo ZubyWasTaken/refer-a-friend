@@ -101,7 +101,7 @@ module.exports = {
 
 \`/deleteinvite\` - Delete an invite link
 • Remove a specific invite you created
-• **Note:** Does NOT refund invite credits
+• Refunds 1 invite credit back to your balance
 • Helps manage your active invites
 
 \`/help\` - Show this help menu
