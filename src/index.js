@@ -1,15 +1,20 @@
 require("dotenv").config({ quiet: true });
-const { Client, Collection, GatewayIntentBits, ActivityType } = require("discord.js");
+const {
+  ActivityType,
+  Client,
+  Collection,
+  GatewayIntentBits,
+  MessageFlags
+} = require("discord.js");
 const path = require("path");
 const fs = require("fs");
 const { initDatabase, closeConnection } = require("./database/init");
 const Logger = require("./utils/logger");
-const { isSetupComplete } = require("./utils/setupCheck");
-const { Invite } = require('./models/schemas');
 const { TIME } = require('./utils/constants');
+const { startServices } = require('./utils/startup');
 
 // Validate required environment variables on startup
-const requiredEnvVars = ['BOT_TOKEN', 'CLIENT_ID', 'APPLICATION_ID', 'MONGODB_URI'];
+const requiredEnvVars = ['BOT_TOKEN', 'MONGODB_URI'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -38,6 +43,7 @@ client.invites = new Collection();
 
 // Add this near the top where you initialize other client properties
 client.recentlyDeletedInvites = new Collection();
+client.plannedInviteDeletions = new Collection();
 
 // Clean up old deleted invite entries to prevent memory leak
 setInterval(() => {
@@ -48,7 +54,13 @@ setInterval(() => {
       client.recentlyDeletedInvites.delete(inviteCode);
     }
   }
-}, TIME.DELETED_INVITE_CLEANUP_INTERVAL);
+
+  for (const [key, timestamp] of client.plannedInviteDeletions.entries()) {
+    if (now - timestamp > TIME.DELETED_INVITE_CACHE_MAX_AGE) {
+      client.plannedInviteDeletions.delete(key);
+    }
+  }
+}, TIME.DELETED_INVITE_CLEANUP_INTERVAL).unref();
 
 // Fetch and cache invites when bot joins a guild or starts up
 // Discord.js 14.x: Use 'ready' event with once: true for initialization
@@ -75,24 +87,13 @@ client.once("ready", async (c) => {
     status: 'online'
   });
 
-  // Initialize database
-  await initDatabase();
-
-  // Log the database initialization
-  client.logger.logToFile("Database initialized", "database_initialized", {
-    guildId: null,
-    guildName: null,
-    userId: client.user.id,
-    username: client.user.tag
-  });
-
   // Cache invites for all guilds
   for (const guild of client.guilds.cache.values()) {
     try {
       const guildInvites = await guild.invites.fetch();
       // Only cache invites created by the bot
       const botInvites = guildInvites.filter(
-        (invite) => invite.inviterId === process.env.APPLICATION_ID
+        (invite) => invite.inviterId === c.user.id
       );
       client.invites.set(
         guild.id,
@@ -122,115 +123,13 @@ client.once("ready", async (c) => {
   }
 });
 
-// Update cache when invites are created
-client.on("inviteCreate", (invite) => {
-  // Only cache if invite was created by the bot
-  if (invite.inviterId === process.env.APPLICATION_ID) {
-
-    // Log the action
-    client.logger.logToFile("New bot invite created", "new_bot_invite_created", {
-      guildId: invite.guild.id,
-      guildName: invite.guild.name,
-      userId: client.user.id,
-      username: client.user.tag,
-      inviteCode: invite.code
-    });
-
-    const guildInvites = client.invites.get(invite.guild.id);
-    if (guildInvites) {
-      guildInvites.set(invite.code, invite);
-
-      // Log the action
-      client.logger.logToFile("Invite added to cache", "invite_added_to_cache", {
-        guildId: invite.guild.id,
-        guildName: invite.guild.name,
-        userId: client.user.id,
-        username: client.user.tag,
-        inviteCode: invite.code
-      });
-    } else {
-      // If no cache exists for this guild, create one
-      client.invites.set(
-        invite.guild.id,
-        new Collection([[invite.code, invite]])
-      );
-
-      // Log the action
-      client.logger.logToFile("New invite cache created", "new_invite_cache_created", {
-        guildId: invite.guild.id,
-        guildName: invite.guild.name,
-        userId: client.user.id,
-        username: client.user.tag,
-        inviteCode: invite.code
-      });
-    }
-  }
-});
-
-// Update cache and database when invites are deleted
-client.on("inviteDelete", async (invite) => {
-    try {
-
-        // First find the invite in our database before deleting
-        const inviteToDelete = await Invite.findOne({
-            invite_code: invite.code,
-            guild_id: invite.guild.id
-        });
-
-        if (inviteToDelete) {
-            // Store ALL the invite info before deleting
-            // Use invite CODE as key (not guild ID) to track multiple deleted invites per guild
-            client.recentlyDeletedInvites.set(invite.code, {
-                code: invite.code,
-                timestamp: Date.now(),
-                guildId: invite.guild.id,
-                _id: inviteToDelete._id,
-                user_id: inviteToDelete.user_id,
-                link: inviteToDelete.link
-            });
-
-            // Remove from database
-            await Invite.deleteOne({
-                invite_code: invite.code,
-                guild_id: invite.guild.id
-            });
-
-            // Log the action
-            client.logger.logToFile("Invite deleted", "invite_deleted", {
-                guildId: invite.guild.id,
-                guildName: invite.guild.name,
-                userId: client.user.id,
-                username: client.user.tag,
-                inviteCode: invite.code
-            });
-        }
-
-        // Remove from cache if it exists
-        const guildInvites = client.invites.get(invite.guild.id);
-        if (guildInvites) {
-            guildInvites.delete(invite.code);
-        }
-
-    } catch (error) {  
-        // Log the error
-        client.logger.logToFile("Error handling invite deletion", "error", {
-            guildId: invite?.guild?.id,
-            guildName: invite?.guild?.name,
-            userId: client.user.id,
-            username: client.user.tag,
-            inviteCode: invite?.code,
-            error: error.message
-        });
-    }
-});
-
 // Attach logger to client
 client.logger = new Logger(client);
 
 // Clean old logs periodically
 setInterval(() => {
     client.logger.cleanOldLogs(TIME.LOG_RETENTION_DAYS);
-}, TIME.LOG_CLEANUP_INTERVAL);
+}, TIME.LOG_CLEANUP_INTERVAL).unref();
 
 // Load commands and events
 client.commands = new Collection();
@@ -241,6 +140,9 @@ const commandFiles = fs
 
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
+  if (!command.data?.name || typeof command.execute !== 'function') {
+    throw new TypeError(`Invalid command module: ${file}`);
+  }
   client.commands.set(command.data.name, command);
 }
 
@@ -262,7 +164,7 @@ for (const file of eventFiles) {
 
 // Handle interactions (Discord.js 14.x best practices)
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
   if (!command) {
@@ -301,13 +203,12 @@ client.on("interactionCreate", async (interaction) => {
       // Check if we can still respond
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({
-          content: errorMessage,
-          flags: ["Ephemeral"],
+          content: errorMessage
         });
       } else {
         await interaction.reply({
           content: errorMessage,
-          flags: ["Ephemeral"],
+          flags: MessageFlags.Ephemeral
         });
       }
     } catch (replyError) {
@@ -318,7 +219,12 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // Graceful shutdown handler (Discord.js 14.x best practice)
+let shuttingDown = false;
+
 async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
   console.log(`\n${signal} received. Shutting down gracefully...`);
 
   try {
@@ -328,7 +234,6 @@ async function shutdown(signal) {
 
     // Close mongoose connection
     await closeConnection();
-    console.log('✅ Database connection closed');
 
     console.log('✅ Shutdown complete');
     process.exit(0);
@@ -345,7 +250,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM')); // Docker/PM2 stop
 process.on('SIGUSR2', () => shutdown('SIGUSR2')); // nodemon restart
 
 // Handle uncaught errors
-process.on('unhandledRejection', (error) => {
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error
+    ? reason
+    : new Error(String(reason));
   console.error('Unhandled promise rejection:', error);
   client.logger?.logToFile(`Unhandled promise rejection: ${error.message}`, "error", {
     guildId: null,
@@ -368,4 +276,16 @@ process.on('uncaughtException', (error) => {
   shutdown('UNCAUGHT_EXCEPTION');
 });
 
-client.login(process.env.BOT_TOKEN);
+startServices({
+  initDatabase,
+  login: () => client.login(process.env.BOT_TOKEN)
+}).catch(async error => {
+  console.error('❌ Failed to start the bot:', error);
+  try {
+    await client.destroy();
+  } catch {
+    // Startup cleanup is best-effort.
+  }
+  await closeConnection().catch(() => {});
+  process.exitCode = 1;
+});

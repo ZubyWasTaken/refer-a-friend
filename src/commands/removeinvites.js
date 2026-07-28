@@ -1,11 +1,20 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role, ServerConfig } = require('../models/schemas');
+const {
+    InteractionContextType,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
+const { User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
+const {
+    calculateInviteBalance,
+    removeInviteCredits
+} = require('../utils/inviteBalances');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('removeinvites')
         .setDescription('Remove invites from a user')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')
@@ -27,6 +36,19 @@ module.exports = {
             const targetUser = interaction.options.getUser('user');
             const amount = interaction.options.getInteger('amount');
 
+            if (!Number.isInteger(amount) || amount < 1) {
+                return await interaction.editReply({
+                    content: '❌ The invite amount must be a positive integer.'
+                });
+            }
+
+            const member = await interaction.guild.members.fetch(targetUser.id);
+            if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return await interaction.editReply({
+                    content: `❌ Cannot remove invites from ${targetUser}; Administrators have unlimited invites.`
+                });
+            }
+
             // Get all roles with invite configurations for this user
             const userRoles = await User.find({
                 user_id: targetUser.id,
@@ -40,75 +62,29 @@ module.exports = {
             }
 
             // Check if user has unlimited invites
-            const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
-            if (hasUnlimitedInvites) {
+            const balance = calculateInviteBalance(userRoles);
+            if (balance.unlimited) {
                 return await interaction.editReply({
                     content: `❌ Cannot remove invites from ${targetUser} as they have unlimited invites.`
                 });
             }
 
-            const member = await interaction.guild.members.fetch(targetUser.id);
-
-            // Get user's highest invite role
-            const highestInviteRole = userRoles.reduce((prev, current) => 
-                (prev.max_invites > current.max_invites) ? prev : current
-            );
-
-            // Find user record
-            const userInvites = await User.findOne({
-                user_id: targetUser.id,
-                role_id: highestInviteRole.role_id,
-                guild_id: interaction.guildId
+            const newTotal = await removeInviteCredits({
+                userId: targetUser.id,
+                guildId: interaction.guildId,
+                amount
             });
 
-            if (!userInvites) {
+            if (newTotal === null) {
                 return await interaction.editReply({
-                    content: `❌ ${targetUser.tag} doesn't have any invites to remove.`
+                    content: `❌ ${targetUser.tag} only has ${balance.total} invites remaining. Cannot remove ${amount}.`
                 });
             }
-
-            // Update user's invites with atomic check to prevent race conditions
-            // The $gte check ensures we don't go negative even if concurrent operations occur
-            const updatedUser = await User.findOneAndUpdate(
-                {
-                    user_id: targetUser.id,
-                    role_id: highestInviteRole.role_id,
-                    guild_id: interaction.guildId,
-                    invites_remaining: { $gte: amount }  // Atomic check
-                },
-                {
-                    $inc: { invites_remaining: -amount }
-                },
-                { new: true }
-            );
-
-            // If update failed, user doesn't have enough invites
-            if (!updatedUser) {
-                const currentInvites = await User.findOne({
-                    user_id: targetUser.id,
-                    role_id: highestInviteRole.role_id,
-                    guild_id: interaction.guildId
-                });
+            if (newTotal === -1) {
                 return await interaction.editReply({
-                    content: `❌ ${targetUser.tag} only has ${currentInvites?.invites_remaining || 0} invites remaining. Cannot remove ${amount}.`
+                    content: `❌ Cannot remove invites from ${targetUser} because their balance became unlimited.`
                 });
             }
-
-            // Get total invites across all roles after update
-            const totalInvites = await User.aggregate([
-                {
-                    $match: {
-                        user_id: targetUser.id,
-                        guild_id: interaction.guildId
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        total: { $sum: "$invites_remaining" }
-                    }
-                }
-            ]);
 
             // Log the action with the correct total
             await interaction.client.logger.logToChannel(interaction.guildId,
@@ -116,7 +92,7 @@ module.exports = {
                 `Admin: <@${interaction.user.id}>\n` +
                 `User: <@${targetUser.id}>\n` +
                 `Amount: -${amount}\n` +
-                `New Total: ${totalInvites[0]?.total || 0}`
+                `New Total: ${newTotal}`
             );
 
             // Log the invite removal to file
@@ -129,7 +105,7 @@ module.exports = {
 
             await interaction.editReply({
                 content: `✅ Removed ${amount} invites from <@${targetUser.id}>.\n` +
-                        `They now have ${totalInvites[0]?.total || 0} invites remaining.`
+                        `They now have ${newTotal} invites remaining.`
             });
 
         } catch (error) {
@@ -139,4 +115,4 @@ module.exports = {
             });
         }
     }
-}; 
+};

@@ -1,11 +1,17 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { Role, ServerConfig, User } = require('../models/schemas');
+const mongoose = require('mongoose');
+const {
+    InteractionContextType,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
+const { Role, User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('unsetrole')
         .setDescription('Remove invite limits from a role')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addRoleOption(option =>
             option.setName('role')
@@ -50,18 +56,18 @@ module.exports = {
                 });
             }
 
-            // Delete the role configuration
-            await Role.findOneAndDelete({
-                role_id: selectedRole.id,
-                guild_id: interaction.guildId
-            });
-
-            // Delete all user records for this role (instead of setting to null which causes issues)
-            // This is cleaner and avoids potential null-related bugs in other queries
-            const deletedCount = await User.deleteMany({
-                guild_id: interaction.guildId,
-                role_id: selectedRole.id
-            });
+            const deletedCount = await mongoose.connection.transaction(
+                async session => {
+                    await Role.findOneAndDelete({
+                        role_id: selectedRole.id,
+                        guild_id: interaction.guildId
+                    }, { session });
+                    return User.deleteMany({
+                        guild_id: interaction.guildId,
+                        role_id: selectedRole.id
+                    }, { session });
+                }
+            );
 
             await interaction.editReply({
                 content: `✅ Successfully removed invite configuration from role ${selectedRole}.\n\n` +
@@ -70,7 +76,7 @@ module.exports = {
             });
 
             // Log the action
-            interaction.client.logger.logToFile(`Successfully removed invite configuration from role "${selectedRole.name}" and reset user limits`, "unset_role_invites", {
+            await interaction.client.logger.logToFile(`Successfully removed invite configuration from role "${selectedRole.name}" and reset user limits`, "unset_role_invites", {
                 guildId: interaction.guildId,
                 guildName: interaction.guild.name,
                 userId: interaction.user.id,
@@ -85,4 +91,4 @@ module.exports = {
             });
         }
     }
-}; 
+};

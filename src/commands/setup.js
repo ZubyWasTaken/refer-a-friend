@@ -1,10 +1,20 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const {
+  ChannelType,
+  InteractionContextType,
+  PermissionFlagsBits,
+  SlashCommandBuilder
+} = require('discord.js');
 const { ServerConfig } = require('../models/schemas');
+const {
+  findMissingChannelPermissions,
+  REQUIRED_CHANNEL_PERMISSIONS
+} = require('../utils/channelPermissions');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Initial setup for the invite manager bot')
+    .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addChannelOption(option =>
       option.setName('logs')
@@ -24,67 +34,34 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply();
 
-    // Check if user has Administrator privileges
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return await interaction.editReply({
-        content: '❌ You need a role with **Administrator** privileges to run this command.\n\n' +
-                'Please:\n' +
-                '1. Ask a server administrator to give you a role with Administrator permissions\n' +
-                '2. Or ask them to run this command instead'
-      });
-    }
-
-    // Add setup check at the start
-    const existingConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-    if (existingConfig) {
-      return await interaction.editReply({
-        content: '❌ This server is already set up!\n\n' +
-                'To modify existing settings, please use:\n' +
-                '`/changedefaults logschannel` - Change logs channel\n' +
-                '`/changedefaults botchannel` - Change bot commands channel\n' +
-                '`/changedefaults defaultrole` - Change default invite role'
+        content: '❌ You need **Administrator** permission to run this command.'
       });
     }
 
     try {
-      const guild = interaction.guild;
-      const botMember = guild.members.me;
-      
-      // Check bot role permissions
-      const requiredBotPermissions = [
-          'ViewAuditLog',
-          'ManageGuild',    // Manage Server
-          'ManageRoles',
-          'ManageChannels',
-          'CreateInstantInvite',
-          'ViewChannel',
-          'SendMessages',
-          'SendMessagesInThreads',
-          'EmbedLinks',
-          'ReadMessageHistory',
-          'UseApplicationCommands'  // Use Slash Commands
-      ];
+      const existingConfig = await ServerConfig.findOne({
+        guild_id: interaction.guildId
+      });
+      if (existingConfig) {
+        return await interaction.editReply({
+          content: '❌ This server is already set up!\n\n' +
+            'Use `/changedefaults` to modify the existing settings.'
+        });
+      }
 
-      const missingPermissions = requiredBotPermissions.filter(perm => !botMember.permissions.has(perm));
-      
-      if (missingPermissions.length > 0) {
-          return await interaction.editReply({
-              content: '❌ The bot role is missing required permissions!\n\n' +
-                      'Missing Permissions:\n' +
-                      missingPermissions.map(perm => `- ${perm}`).join('\n') + '\n\n' +
-                      'Please ensure the bot role has all necessary permissions:\n' +
-                      '- View Audit Log\n' +
-                      '- Manage Server\n' +
-                      '- Manage Roles\n' +
-                      '- Manage Channels\n' +
-                      '- Create Invite\n' +
-                      '- View Channels\n' +
-                      '- Send Messages\n' +
-                      '- Send Messages in Threads\n' +
-                      '- Embed Links\n' +
-                      '- Read Message History\n' +
-                      '- Use Slash Commands'
-          });
+      const botMember = interaction.guild.members.me;
+      if (!botMember) {
+        return await interaction.editReply({
+          content: '❌ Cannot resolve the bot member for permission checks. Please try again.'
+        });
+      }
+
+      if (!botMember.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        return await interaction.editReply({
+          content: '❌ The bot needs the **Manage Server** permission to fetch and track server invites.'
+        });
       }
 
       const logsChannel = interaction.options.getChannel('logs');
@@ -94,110 +71,84 @@ module.exports = {
       if (defaultRole && !defaultRole.editable) {
         return await interaction.editReply({
           content: `❌ I cannot assign ${defaultRole} as the default invite role.\n\n` +
-                  'Make sure:\n' +
-                  '1. The bot has the **Manage Roles** permission\n' +
-                  '2. The bot\'s highest role is above the selected role\n' +
-                  '3. The selected role is not managed by another integration'
+            'Make sure the bot has **Manage Roles**, its highest role is above the selected role, and the role is not managed by an integration.'
         });
       }
 
-      // Check system messages channel
-      const systemChannel = guild.systemChannel;
-      if (!systemChannel) {
+      const missingLogsPermissions = findMissingChannelPermissions(
+        logsChannel,
+        botMember,
+        REQUIRED_CHANNEL_PERMISSIONS.logs
+      );
+      const missingCommandPermissions = findMissingChannelPermissions(
+        botChannel,
+        botMember,
+        REQUIRED_CHANNEL_PERMISSIONS.commands
+      );
+
+      if (missingLogsPermissions.length > 0) {
         return await interaction.editReply({
-          content: '❌ System Messages Channel is not set up! Please:\n' +
-                  '1. Go to Server Settings\n' +
-                  '2. Click on "Overview"\n' +
-                  '3. Set a "System Messages Channel"\n' +
-                  '4. Enable "Show Join Messages"'
+          content: `❌ Missing permissions in ${logsChannel}: ${missingLogsPermissions.join(', ')}.`
         });
       }
-
-      // Add channel permission checks
-      const requiredPermissions = ['ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory'];
-      
-      // Check logs channel permissions
-      const logsPermissions = logsChannel.permissionsFor(botMember);
-      if (!requiredPermissions.every(perm => logsPermissions.has(perm))) {
+      if (missingCommandPermissions.length > 0) {
         return await interaction.editReply({
-          content: 'There was an error during setup.\n' +
-                  `Make sure the bot has access to the logs channel (${logsChannel}).`
+          content: `❌ Missing permissions in ${botChannel}: ${missingCommandPermissions.join(', ')}.`
         });
       }
 
-      // Check bot channel permissions
-      const botChannelPermissions = botChannel.permissionsFor(botMember);
-      if (!requiredPermissions.every(perm => botChannelPermissions.has(perm))) {
-        return await interaction.editReply({
-          content: 'There was an error during setup.\n' +
-                  `Make sure the bot has access to the bot commands channel (${botChannel}).`
-        });
-      }
-
-      // Check system channel permissions
-      const systemPermissions = systemChannel.permissionsFor(botMember);
-      if (!requiredPermissions.every(perm => systemPermissions.has(perm))) {
-        return await interaction.editReply({
-          content: 'There was an error during setup.\n' +
-                  `Make sure the bot has access to the system messages channel (${systemChannel}).`
-        });
-      }
-
-
-      // Check if system messages are enabled
-      const systemChannelFlags = guild.systemChannelFlags;
-      if (systemChannelFlags.has('SuppressJoinNotifications')) {
-        return await interaction.editReply({
-          content: '❌ Join Messages are disabled! Please:\n' +
-                  '1. Go to Server Settings\n' +
-                  '2. Click on "Overview"\n' +
-                  '3. Under "System Messages Channel", enable "Show Join Messages"'
-        });
-      }
-
-      // Update or insert server config using MongoDB
       await ServerConfig.findOneAndUpdate(
         { guild_id: interaction.guildId },
         {
           guild_id: interaction.guildId,
           logs_channel_id: logsChannel.id,
           bot_channel_id: botChannel.id,
-          system_channel_id: systemChannel.id,
-          default_invite_role: defaultRole?.id || null,
+          default_invite_role: defaultRole?.id ?? null,
           setup_completed: true
         },
-        { upsert: true, new: true }
+        {
+          upsert: true,
+          returnDocument: 'after',
+          runValidators: true,
+          setDefaultsOnInsert: true
+        }
       );
 
+      const notificationResults = await Promise.allSettled([
+        logsChannel.send('✅ Bot logging has been configured for this channel.'),
+        botChannel.send('✅ Bot commands have been configured for this channel.')
+      ]);
+      const notificationWarning = notificationResults.some(result => (
+        result.status === 'rejected'
+      ))
+        ? '\n\n⚠️ Configuration was saved, but one test message could not be sent.'
+        : '';
       const response = [
         '🔧 **Bot Setup Complete**',
         '',
         `📝 Logs Channel: ${logsChannel}`,
         `🤖 Bot Commands Channel: ${botChannel}`,
-        `📢 System Messages Channel: ${systemChannel}`,
         defaultRole ? `🎭 Default Invite Role: ${defaultRole}` : null,
         '',
-        `\nUse \`/help\` anywhere in the server to see all available commands.`
-      ].filter(Boolean).join('\n');
+        'Use `/help` anywhere in the server to see all commands.'
+      ].filter(Boolean).join('\n') + notificationWarning;
 
-      // Log successful setup
-      interaction.client.logger.logToFile("Server setup completed", "setup", {
-        guildId: interaction.guildId,
-        guildName: interaction.guild.name,
-        userId: interaction.user.id,
-        username: interaction.user.tag
-      });
+      await interaction.client.logger.logToFile(
+        'Server setup completed',
+        'setup',
+        {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag
+        }
+      );
 
       await interaction.editReply({ content: response });
-
-      // Send test messages
-      await logsChannel.send('✅ Bot logging has been configured for this channel.');
-      await botChannel.send('✅ Bot commands have been configured to only be executed in this channel.');
-
     } catch (error) {
       console.error('Error during setup:', error);
       await interaction.editReply({
-        content: 'There was an error during setup. Please contact the [developer](https://imzuby.straw.page/) for assistance.\n'
+        content: 'There was an error during setup. Please contact the developer for assistance.'
       });
     }
   }

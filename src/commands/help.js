@@ -1,23 +1,20 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const { ServerConfig } = require('../models/schemas');
+const {
+    EmbedBuilder,
+    InteractionContextType,
+    MessageFlags,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
+const { version } = require('../../package.json');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('help')
-        .setDescription('Shows all available commands'),
-    requiresSetup: false,
+        .setDescription('Shows all available commands')
+        .setContexts(InteractionContextType.Guild),
 
     async execute(interaction) {
-        await interaction.deferReply({flags: ['Ephemeral'] });
-
-        // // Check if server is setup
-        // const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-        // if (!serverConfig) {
-        //     return await interaction.editReply({
-        //         content: '❌ Server not set up! Contact a server administrator to set up the bot.',
-        //         flags: ['Ephemeral']
-        //     });
-        // }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
         const embed = new EmbedBuilder()
@@ -25,7 +22,7 @@ module.exports = {
             .setTitle('📚 Command List')
             .setTimestamp()
             .setFooter({ 
-                text: 'Refer-a-Friend v0.1.2', 
+                text: `Refer-a-Friend v${version}`,
                 iconURL: interaction.client.user.displayAvatarURL() 
             });
 
@@ -132,8 +129,7 @@ module.exports = {
         });
 
         await interaction.editReply({ 
-            embeds: [embed], 
-            flags: ['Ephemeral']
+            embeds: [embed]
         });
     }
-}; 
+};

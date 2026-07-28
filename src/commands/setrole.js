@@ -1,11 +1,17 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { Role, ServerConfig, User } = require('../models/schemas');
+const mongoose = require('mongoose');
+const {
+  InteractionContextType,
+  PermissionFlagsBits,
+  SlashCommandBuilder
+} = require('discord.js');
+const { Role, User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setrole')
     .setDescription('Set the maximum number of invites for a role')
+    .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addRoleOption(option =>
       option.setName('role')
@@ -21,108 +27,121 @@ module.exports = {
     await interaction.deferReply();
 
     const serverConfig = await checkRequirements(interaction);
-    if (!serverConfig) return;  // Exit if checks failed  
+    if (!serverConfig) return;
 
     const role = interaction.options.getRole('role');
     const maxInvites = interaction.options.getInteger('maxinvites');
 
-    // Add validation for maxInvites
-    if (maxInvites < -1 || maxInvites === 0) {
-        return await interaction.editReply({
-            content: '❌ Maximum invites cannot be less than -1 or 0.\nUse -1 for unlimited invites or a positive number above 0 for a limited amount.'
-        });
+    if (
+      !Number.isInteger(maxInvites) ||
+      maxInvites < -1 ||
+      maxInvites === 0
+    ) {
+      return await interaction.editReply({
+        content: '❌ Maximum invites must be -1 for unlimited or a positive integer.'
+      });
     }
 
     try {
-      // Update or create role in database
-      await Role.findOneAndUpdate(
-        { 
-          role_id: role.id,
-          guild_id: interaction.guildId
-        },
-        {
-          role_id: role.id,
-          guild_id: interaction.guildId,
-          name: role.name,
-          max_invites: maxInvites
-        },
-        { upsert: true }
-      );
+      const guildMembers = await interaction.guild.members.fetch();
+      const membersWithRole = guildMembers.filter(member => (
+        member.roles.cache.has(role.id)
+      ));
+      await mongoose.connection.transaction(async session => {
+        const previousConfig = await Role.findOne(
+          {
+            role_id: role.id,
+            guild_id: interaction.guildId
+          },
+          null,
+          { session }
+        );
 
-      // Get all members with this role
-      const membersWithRole = await interaction.guild.members.fetch();
-      const existingMembers = membersWithRole.filter(member => member.roles.cache.has(role.id));
-      
-      let updatedCount = 0;
-      let response = `✅ Successfully set maximum invites for \`${role.name}\` to ${maxInvites === -1 ? 'unlimited' : maxInvites}.`;
+        await Role.findOneAndUpdate(
+          {
+            role_id: role.id,
+            guild_id: interaction.guildId
+          },
+          {
+            role_id: role.id,
+            guild_id: interaction.guildId,
+            name: role.name,
+            max_invites: maxInvites
+          },
+          {
+            session,
+            upsert: true,
+            returnDocument: 'after',
+            runValidators: true,
+            setDefaultsOnInsert: true
+          }
+        );
 
-      // Log the action
-      interaction.client.logger.logToFile(`Set maximum invites for \`${role.name}\` to ${maxInvites === -1 ? 'unlimited' : maxInvites}.`, "set_role_invites", {
-        guildId: interaction.guildId,
-        guildName: interaction.guild.name,
-        userId: interaction.user.id,
-        username: interaction.user.tag,
-        roleName: role.name,
-        maxInvites: maxInvites
+        const replacesSentinel =
+          maxInvites === -1 ||
+          previousConfig?.max_invites === -1;
+
+        const operations = Array.from(
+          membersWithRole.values(),
+          member => ({
+            updateOne: {
+              filter: {
+                user_id: member.id,
+                role_id: role.id,
+                guild_id: interaction.guildId
+              },
+              update: replacesSentinel
+                ? {
+                    $set: { invites_remaining: maxInvites },
+                    $setOnInsert: {
+                      user_id: member.id,
+                      role_id: role.id,
+                      guild_id: interaction.guildId
+                    }
+                  }
+                : {
+                    $setOnInsert: {
+                      user_id: member.id,
+                      role_id: role.id,
+                      guild_id: interaction.guildId,
+                      invites_remaining: maxInvites
+                    }
+                  },
+              upsert: true
+            }
+          })
+        );
+
+        const batchSize = 500;
+        for (let index = 0; index < operations.length; index += batchSize) {
+          await User.bulkWrite(
+            operations.slice(index, index + batchSize),
+            { session, ordered: true }
+          );
+        }
       });
 
-      if (maxInvites === -1) {
-        // Set unlimited invites for all members with this role
-        for (const member of existingMembers.values()) {
-          await User.updateMany(
-            {
-              user_id: member.id,
-              guild_id: interaction.guildId
-            },
-            {
-              $set: { invites_remaining: -1 }
-            }
-          );
-          updatedCount++;
-        }
-
-        if (updatedCount > 0) {
-          response += `\n\nℹ️ Set unlimited invites for ${updatedCount} member${updatedCount === 1 ? '' : 's'} with this role.`;
-        }
-
-        // Log the action
-        interaction.client.logger.logToFile("Set role invites", "set_role_invites", {
+      await interaction.client.logger.logToFile(
+        `Set invite allocation for ${role.name} to ${maxInvites === -1 ? 'unlimited' : maxInvites}`,
+        'set_role_invites',
+        {
           guildId: interaction.guildId,
           guildName: interaction.guild.name,
           userId: interaction.user.id,
           username: interaction.user.tag,
           roleName: role.name,
-          maxInvites: 'unlimited'
-        });
-      } else {
-        // Handle normal invite amounts for existing members
-        for (const member of existingMembers.values()) {
-          const existingUser = await User.findOne({
-            user_id: member.id,
-            role_id: role.id,
-            guild_id: interaction.guildId
-          });
-
-          if (!existingUser) {
-            await User.create({
-              user_id: member.id,
-              role_id: role.id,
-              guild_id: interaction.guildId,
-              invites_remaining: maxInvites
-            });
-            updatedCount++;
-          }
+          maxInvites
         }
+      );
 
-        if (updatedCount > 0) {
-          response += `\n\nℹ️ Added ${maxInvites} invites to ${updatedCount} existing member${updatedCount === 1 ? '' : 's'} with this role.`;
-        }
+      let response = `✅ Set the invite allocation for \`${role.name}\` to ` +
+        `${maxInvites === -1 ? 'unlimited' : maxInvites}.`;
+      if (membersWithRole.size > 0) {
+        response += `\n\nℹ️ Synchronized ${membersWithRole.size} existing member` +
+          `${membersWithRole.size === 1 ? '' : 's'} with this role.`;
       }
 
-      await interaction.editReply({
-        content: response
-      });
-
+      await interaction.editReply({ content: response });
     } catch (error) {
       console.error('Error setting role invites:', error);
       await interaction.editReply({
@@ -130,4 +149,4 @@ module.exports = {
       });
     }
   }
-}; 
+};

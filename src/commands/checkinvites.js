@@ -1,11 +1,19 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+    InteractionContextType,
+    MessageFlags,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
 const { User, Invite } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
+const { calculateInviteBalance } = require('../utils/inviteBalances');
+const { appendNumberedLinks } = require('../utils/responseBuilder');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('checkinvites')
         .setDescription('Check how many invites a user has')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')
@@ -13,7 +21,7 @@ module.exports = {
                 .setRequired(true)),
 
     async execute(interaction) {
-        await interaction.deferReply();
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const serverConfig = await checkRequirements(interaction);
         if (!serverConfig) return;  // Exit if checks failed
@@ -34,34 +42,38 @@ module.exports = {
             });
 
             // Get user's invite information
-            const userInvites = await User.aggregate([
-                {
-                    $match: {
-                        user_id: targetUser.id,
-                        guild_id: interaction.guildId
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalInvitesRemaining: { $sum: "$invites_remaining" }
-                    }
-                }
-            ]);
+            const userRecords = await User.find({
+                user_id: targetUser.id,
+                guild_id: interaction.guildId
+            });
+            const balance = calculateInviteBalance(userRecords);
 
             // Get active invites
             const activeInvites = await Invite.aggregate([
                 {
                     $match: {
                         user_id: targetUser.id,
-                        guild_id: interaction.guildId
+                        guild_id: interaction.guildId,
+                        active: { $ne: false }
                     }
                 },
                 {
                     $lookup: {
                         from: 'jointrackings',
-                        localField: '_id',
-                        foreignField: 'invite_id',
+                        let: {
+                            inviteId: '$_id',
+                            guildId: '$guild_id'
+                        },
+                        pipeline: [{
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$invite_id', '$$inviteId'] },
+                                        { $eq: ['$guild_id', '$$guildId'] }
+                                    ]
+                                }
+                            }
+                        }],
                         as: 'uses'
                     }
                 },
@@ -81,17 +93,23 @@ module.exports = {
                             { max_uses: 0 }
                         ]
                     }
+                },
+                {
+                    $sort: {
+                        created_at: 1,
+                        _id: 1
+                    }
                 }
             ]);
 
             // Log the results
-            const totalInvitesRemaining = userInvites.length > 0 ? userInvites[0].totalInvitesRemaining : 0;
-            interaction.client.logger.logToFile(`Invite check results for ${targetUser.tag} (${targetUser.id}): remaining invites ${totalInvitesRemaining} active invites ${activeInvites.length}`, "invite_check", {
+            const totalInvitesRemaining = balance.total;
+            await interaction.client.logger.logToFile(`Invite check results for ${targetUser.tag} (${targetUser.id}): remaining invites ${totalInvitesRemaining} active invites ${activeInvites.length}`, "invite_check", {
                 guildId: interaction.guildId,
                 guildName: interaction.guild.name,
                 userId: interaction.user.id,
                 username: interaction.user.tag,
-                message: `Remaining invites: ${isTargetAdmin ? 'Unlimited' : totalInvitesRemaining}, ` +
+                message: `Remaining invites: ${isTargetAdmin || balance.unlimited ? 'Unlimited' : totalInvitesRemaining}, ` +
                     `Active invites: ${activeInvites.length}`
             });
 
@@ -99,34 +117,33 @@ module.exports = {
             let response = `**Invite Balance for ${displayName}:**\n`;
             if (isTargetAdmin) {
                 response += `${displayName} has unlimited invites (Administrator)\n`;
-            } else if (userInvites.length > 0) {
-                const inviteCount = userInvites[0].totalInvitesRemaining === -1 ? 'Unlimited' : userInvites[0].totalInvitesRemaining;
+            } else if (balance.unlimited) {
+                response += `${displayName} has unlimited invites\n`;
+            } else if (userRecords.length > 0) {
+                const inviteCount = balance.total;
                 response += `${displayName} has ${inviteCount} invites remaining\n`;
             } else {
                 response += `${displayName} has 0 invites remaining\n`;
             }
 
             if (activeInvites.length > 0) {
-                response += '\n**Active Invites:**\n';
-                activeInvites.forEach((inv, index) => {
-                    const uses = inv.max_uses === 0 ? '∞' : inv.max_uses;
-                    response += `${index + 1}. ${inv.link}\n`;
-                });
+                response = appendNumberedLinks(
+                    `${response}\n**Active Invites:**\n`,
+                    activeInvites.map(invite => invite.link)
+                );
             } else {
                 response += `\nThey have no active invites.`;
             }
 
             await interaction.editReply({
-                content: response,
-                flags: ['Ephemeral']
+                content: response
             });
 
         } catch (error) {
             console.error('Error checking invites:', error);
             await interaction.editReply({
-                content: 'There was an error checking the user\'s invites.',
-                flags: ['Ephemeral']
+                content: 'There was an error checking the user\'s invites.'
             });
         }
     }
-}; 
+};

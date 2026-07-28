@@ -36,6 +36,8 @@ function setupConnectionListeners() {
 
 // Expose closeConnection for graceful shutdown
 async function closeConnection() {
+    if (mongoose.connection.readyState === 0) return;
+
     try {
         await mongoose.connection.close();
         console.log('📡 Mongoose connection closed');
@@ -53,45 +55,35 @@ async function initDatabase() {
         // Note: keepAlive is permanently enabled
         await mongoose.connect(process.env.MONGODB_URI, {
             dbName: 'invite_manager',
-            // Connection timeout and pool sizing
-            serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s default
-            maxPoolSize: 10, // Maintain up to 10 socket connections
-            minPoolSize: 2,  // Minimum 2 connections in pool
+            autoIndex: false,
+            serverSelectionTimeoutMS: 5000,
+            maxPoolSize: 10,
+            minPoolSize: 0
         });
 
         console.log('✅ Connected to MongoDB');
         console.log(`   Database: ${mongoose.connection.db.databaseName}`);
-        console.log(`   Host: ${mongoose.connection.host}`);
 
-        // Create indexes for better query performance
-        // Using Promise.allSettled to handle index creation errors gracefully
-        const indexResults = await Promise.allSettled([
-            // Server Config indexes
-            ServerConfig.collection.createIndex({ guild_id: 1 }, { unique: true }),
+        const models = [User, Invite, Role, JoinTracking, ServerConfig];
+        await Promise.all(models.map(model => model.createIndexes()));
 
-            // Roles indexes
-            Role.collection.createIndex({ role_id: 1 }, { unique: true }),
-
-            // Users indexes
-            User.collection.createIndex({ user_id: 1, role_id: 1 }, { unique: true }),
-
-            // Invites indexes
-            Invite.collection.createIndex({ invite_code: 1 }, { unique: true }),
-            Invite.collection.createIndex({ user_id: 1 }),
-
-            // Join Tracking indexes
-            JoinTracking.collection.createIndex({ invite_id: 1 }),
-            JoinTracking.collection.createIndex({ joined_user_id: 1 })
-        ]);
-
-        // Check for index creation failures
-        const failures = indexResults.filter(result => result.status === 'rejected');
-        if (failures.length > 0) {
-            console.log('⚠️  Some indexes may already exist (this is normal on subsequent runs)');
-        } else {
-            console.log('✅ Database indexes created successfully');
+        const indexDiffs = await Promise.all(
+            models.map(async model => ({
+                model: model.modelName,
+                diff: await model.diffIndexes()
+            }))
+        );
+        const legacyIndexes = indexDiffs.flatMap(({ model, diff }) => (
+            diff.toDrop.map(index => `${model}.${index}`)
+        ));
+        if (legacyIndexes.length > 0) {
+            console.warn(
+                '⚠️  Legacy indexes remain and should be reviewed manually:',
+                legacyIndexes.join(', ')
+            );
         }
 
+        console.log('✅ Database indexes verified');
         console.log('✅ Database initialized successfully');
     } catch (error) {
         console.error('❌ Error initializing database:', error.message);

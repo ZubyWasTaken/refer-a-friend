@@ -1,23 +1,37 @@
-const { SlashCommandBuilder, PermissionFlagsBits, Collection } = require('discord.js');
-const { User, Role, Invite, ServerConfig } = require('../models/schemas');
+const {
+  Collection,
+  InteractionContextType,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder
+} = require('discord.js');
+const { User, Role, Invite } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
+const {
+  calculateInviteBalance,
+  consumeInviteCredit,
+  refundInviteCredit
+} = require('../utils/inviteBalances');
+const {
+  consumePlannedInviteDeletion,
+  markPlannedInviteDeletion
+} = require('../utils/inviteDeletionTracker');
 const { initializeUser } = require('../utils/userManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('createinvite')
-    .setDescription('Creates a new single-use invite link'),
+    .setDescription('Creates a new single-use invite link')
+    .setContexts(InteractionContextType.Guild),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: ['Ephemeral'] });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Check if server is setup
-    const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
+    const serverConfig = await checkRequirements(interaction, {
+      requireAdministrator: false
+    });
     if (!serverConfig) {
-      return await interaction.editReply({
-        content: '❌ This server is not set up for invite management.\n' +
-                'Please contact a server administrator for assistance.',
-        flags: ['Ephemeral']
-      });
+      return;
     }
 
     try {
@@ -37,73 +51,41 @@ module.exports = {
         guild_id: interaction.guildId
       });
 
-      // If not admin, check permissions
-      if (!isAdmin) {
-        if (inviteRoles.length === 0 && existingEntries.length === 0) {
-          return await interaction.editReply({
-            content: '❌ **You need a role with invite permissions to use this command**\n\n' +
-                    'If you think this is a mistake, contact an administrator',
-            flags: ['Ephemeral']
-          });
-        }
+      if (
+        !isAdmin &&
+        inviteRoles.length === 0 &&
+        existingEntries.length === 0
+      ) {
+        return await interaction.editReply({
+          content: '❌ **You need a role with invite permissions to use this command**\n\n' +
+                  'If you think this is a mistake, contact an administrator'
+        });
       }
 
-      // Setup admin role if needed
-      if (isAdmin) {
-        const adminRole = roles.find(role => role.permissions.has(PermissionFlagsBits.Administrator));
-        if (adminRole) {
-          await Role.findOneAndUpdate(
-            {
-              role_id: adminRole.id,
-              guild_id: interaction.guildId
-            },
-            {
-              role_id: adminRole.id,
-              guild_id: interaction.guildId,
-              name: adminRole.name,
-              max_invites: -1
-            },
-            { upsert: true }
-          );
+      await Promise.all(
+        inviteRoles.map(role => (
+          initializeUser(member.id, role.role_id, interaction.guildId)
+        ))
+      );
 
-          await initializeUser(member.id, adminRole.id, interaction.guildId);
-        }
-      }
-
-      // Get or initialize user's highest invite role
-      let currentInviteRole = null;
-      if (inviteRoles.length > 0) {
-        currentInviteRole = inviteRoles.reduce((prev, current) =>
-          (prev.max_invites > current.max_invites) ? prev : current
-        );
-        await initializeUser(member.id, currentInviteRole.role_id, interaction.guildId);
-      }
-
-      // Get all user's invite records
       const userRoles = await User.find({
         user_id: interaction.user.id,
         guild_id: interaction.guildId
       });
 
-      if (!userRoles || userRoles.length === 0) {
+      if (!isAdmin && userRoles.length === 0) {
         return await interaction.editReply({
-          content: '❌ You don\'t have any roles that grant invites.',
-          flags: ['Ephemeral']
+          content: '❌ You don\'t have any roles that grant invites.'
         });
       }
 
-      // Check if user has unlimited invites
-      const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
-
-      // Calculate total invites (if not unlimited)
-      let totalInvites = 0;
+      const balance = calculateInviteBalance(userRoles);
+      const hasUnlimitedInvites = isAdmin || balance.unlimited;
+      const totalInvites = balance.total;
       if (!hasUnlimitedInvites) {
-        totalInvites = userRoles.reduce((sum, role) => sum + role.invites_remaining, 0);
-
         if (totalInvites <= 0) {
           return await interaction.editReply({
-            content: '❌ You don\'t have any invites remaining.',
-            flags: ['Ephemeral']
+            content: '❌ You don\'t have any invites remaining.'
           });
         }
       }
@@ -112,93 +94,150 @@ module.exports = {
       const botMember = interaction.guild.members.me;
       if (!botMember) {
         return await interaction.editReply({
-          content: '❌ Cannot verify bot permissions. Please try again.',
-          flags: ['Ephemeral']
+          content: '❌ Cannot verify bot permissions. Please try again.'
         });
       }
 
       const botPermissions = interaction.channel.permissionsFor(botMember);
       if (!botPermissions || !botPermissions.has(PermissionFlagsBits.CreateInstantInvite)) {
         return await interaction.editReply({
-          content: '❌ I don\'t have permission to create invites in this channel.\nPlease contact an administrator to grant me the "Create Invite" permission.',
-          flags: ['Ephemeral']
+          content: '❌ I don\'t have permission to create invites in this channel.\nPlease contact an administrator to grant me the "Create Invite" permission.'
         });
       }
 
-      // Decrement invite count BEFORE creating invite (prevents race condition issues)
       let decrementedRole = null;
       if (!hasUnlimitedInvites) {
-        // Find first role with invites remaining and decrement atomically
-        // This prevents race conditions by checking invites > 0 at update time
-        for (const role of userRoles) {
-          const updated = await User.findOneAndUpdate(
-            {
-              _id: role._id,
-              invites_remaining: { $gt: 0 }  // Atomic check
-            },
-            { $inc: { invites_remaining: -1 } },
-            { new: true }
-          );
-
-          if (updated) {
-            decrementedRole = updated;
-            break;
-          }
-        }
-
-        // If no role could be decremented, another concurrent request consumed the invites
+        decrementedRole = await consumeInviteCredit({
+          userId: interaction.user.id,
+          guildId: interaction.guildId
+        });
         if (!decrementedRole) {
           return await interaction.editReply({
-            content: '❌ You don\'t have any invites remaining. Another request may have used your last invite.',
-            flags: ['Ephemeral']
+            content: '❌ You don\'t have any invites remaining. Another request may have used your last invite.'
           });
         }
       }
 
       let invite;
       try {
-        // Create the invite
         invite = await interaction.channel.createInvite({
           maxAge: 0,
           maxUses: 1,
           unique: true,
         });
+      } catch (discordError) {
+        if (decrementedRole) {
+          const refunded = await refundInviteCredit({
+            userId: interaction.user.id,
+            guildId: interaction.guildId,
+            roleId: decrementedRole.role_id
+          });
+          if (!refunded) {
+            await interaction.client.logger.logToFile(
+              'Invite creation failed and its credit could not be refunded',
+              'critical',
+              {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag
+              }
+            );
+          }
+        }
+        throw discordError;
+      }
 
-        // Store the invite in the database
+      try {
         await Invite.create({
           invite_code: invite.code,
           guild_id: interaction.guildId,
           user_id: interaction.user.id,
           link: invite.url,
-          max_uses: 1
+          max_uses: 1,
+          debited_role_id: decrementedRole?.role_id ?? null,
+          active: true
         });
+      } catch (databaseError) {
+        markPlannedInviteDeletion(
+          interaction.client,
+          interaction.guildId,
+          invite.code
+        );
 
-        // Update cache
-        const guildInvites = interaction.client.invites.get(interaction.guildId);
-        if (guildInvites) {
-          guildInvites.set(invite.code, invite);
-        } else {
-          interaction.client.invites.set(interaction.guildId, new Collection([[invite.code, invite]]));
-        }
-
-        // Log invite creation to file
-        interaction.client.logger.logToFile("Invite created", "invite", {
-          guildId: interaction.guildId,
-          guildName: interaction.guild.name,
-          userId: interaction.user.id,
-          username: interaction.user.tag,
-          inviteCode: invite.code
-        });
-      } catch (inviteError) {
-        // If invite creation failed, refund the decremented invite
-        if (decrementedRole) {
-          await User.findOneAndUpdate(
-            { _id: decrementedRole._id },
-            { $inc: { invites_remaining: 1 } }
+        try {
+          await invite.delete('Rolling back failed invite persistence');
+        } catch (deleteError) {
+          consumePlannedInviteDeletion(
+            interaction.client,
+            interaction.guildId,
+            invite.code
           );
+          await interaction.client.logger.logToFile(
+            `Invite database write and Discord rollback both failed: ${deleteError.message}`,
+            'critical',
+            {
+              guildId: interaction.guildId,
+              guildName: interaction.guild.name,
+              userId: interaction.user.id,
+              username: interaction.user.tag,
+              inviteCode: invite.code
+            }
+          );
+          return await interaction.editReply({
+            content: '⚠️ The invite was created but could not be recorded or removed. ' +
+                    `Your credit remains consumed. Please contact an administrator and provide this link: ${invite.url}`
+          });
         }
-        throw inviteError; // Re-throw to be caught by outer catch block
+
+        if (decrementedRole) {
+          try {
+            const refunded = await refundInviteCredit({
+              userId: interaction.user.id,
+              guildId: interaction.guildId,
+              roleId: decrementedRole.role_id
+            });
+            if (!refunded) {
+              throw new Error('No finite invite balance record exists');
+            }
+          } catch (refundError) {
+            await interaction.client.logger.logToFile(
+              `Invite rollback succeeded but credit refund failed: ${refundError.message}`,
+              'critical',
+              {
+                guildId: interaction.guildId,
+                guildName: interaction.guild.name,
+                userId: interaction.user.id,
+                username: interaction.user.tag,
+                inviteCode: invite.code
+              }
+            );
+            return await interaction.editReply({
+              content: '❌ The invite was rolled back, but its credit could not be refunded automatically. Please contact an administrator.'
+            });
+          }
+        }
+
+        throw databaseError;
       }
+
+      const guildInvites = interaction.client.invites.get(interaction.guildId);
+      if (guildInvites) {
+        guildInvites.set(invite.code, invite);
+      } else {
+        interaction.client.invites.set(
+          interaction.guildId,
+          new Collection([[invite.code, invite]])
+        );
+      }
+
+      await interaction.client.logger.logToFile("Invite created", "invite", {
+        guildId: interaction.guildId,
+        guildName: interaction.guild.name,
+        userId: interaction.user.id,
+        username: interaction.user.tag,
+        inviteCode: invite.code
+      });
 
       // Log to channel
       await interaction.client.logger.logToChannel(interaction.guildId,
@@ -213,13 +252,12 @@ module.exports = {
         : `${totalInvites - 1} invites remaining`;
 
       return await interaction.editReply({
-        content: `✅ Created invite: ${invite.url}\n\nYou have ${inviteCountMessage}.\nUse \`/invites\` to see your active invites.`,
-        flags: ['Ephemeral']
+        content: `✅ Created invite: ${invite.url}\n\nYou have ${inviteCountMessage}.\nUse \`/invites\` to see your active invites.`
       });
 
     } catch (error) {
       console.error('Error in createinvite:', error);
-      interaction.client.logger.logToFile(`Failed to create invite: ${error.message}`, "error", {
+      await interaction.client.logger.logToFile(`Failed to create invite: ${error.message}`, "error", {
         guildId: interaction.guildId,
         guildName: interaction.guild.name,
         userId: interaction.user.id,
@@ -227,9 +265,8 @@ module.exports = {
       });
 
       await interaction.editReply({
-        content: 'There was an error creating the invite.',
-        flags: ['Ephemeral']
+        content: 'There was an error creating the invite.'
       });
     }
   }
-}; 
+};

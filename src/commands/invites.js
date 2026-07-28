@@ -1,154 +1,176 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { User, Role, Invite, ServerConfig } = require('../models/schemas');
+const {
+  Collection,
+  InteractionContextType,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder
+} = require('discord.js');
+const { User, Role, Invite } = require('../models/schemas');
+const checkRequirements = require('../utils/checkRequirements');
+const {
+  calculateInviteBalance,
+  finalizeInviteDeletion
+} = require('../utils/inviteBalances');
+const { appendNumberedLinks } = require('../utils/responseBuilder');
 const { initializeUser } = require('../utils/userManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('invites')
-    .setDescription('Check your remaining invite balance and view your active invite links'),
+    .setDescription('Check your remaining invite balance and view your active invite links')
+    .setContexts(InteractionContextType.Guild),
 
   async execute(interaction) {
-    await interaction.deferReply({ flags: ['Ephemeral'] });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Check if server is setup
-    const serverConfig = await ServerConfig.findOne({ guild_id: interaction.guildId });
-    if (!serverConfig) {
-        return await interaction.editReply({
-            content: '❌ This server is not set up for invite management.\n' +
-                    'Please contact a server administrator for assistance.',
-            flags: ['Ephemeral']
-        });
-    }
+    const serverConfig = await checkRequirements(interaction, {
+      requireAdministrator: false
+    });
+    if (!serverConfig) return;
 
     try {
-        const member = interaction.member;
-        const roles = member.roles.cache;
-        const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+      const member = interaction.member;
+      const isAdministrator = member.permissions.has(
+        PermissionFlagsBits.Administrator
+      );
+      const inviteRoles = await Role.find({
+        role_id: { $in: Array.from(member.roles.cache.keys()) },
+        guild_id: interaction.guildId
+      });
+      const existingEntries = await User.find({
+        user_id: member.id,
+        guild_id: interaction.guildId
+      });
 
-        // Get all invite roles the user has (including for admins)
-        const inviteRoles = await Role.find({
-            role_id: { $in: Array.from(roles.keys()) },
-            guild_id: interaction.guildId
+      if (
+        !isAdministrator &&
+        inviteRoles.length === 0 &&
+        existingEntries.length === 0
+      ) {
+        return await interaction.editReply({
+          content: '❌ **You need a role with invite permissions to use this command**\n\n' +
+            'If you think this is a mistake, contact an administrator'
         });
-
-        // Check for existing user entries
-        const existingEntries = await User.find({
-            user_id: member.id,
-            guild_id: interaction.guildId
-        });
-
-        // If not admin, do permission checks
-        if (!isAdmin) {
-            // Case 1: Never had permissions
-            if (inviteRoles.length === 0 && existingEntries.length === 0) {
-                return await interaction.editReply({
-                    content: '❌ **You need a role with invite permissions to use this command**\n\n' +
-                            'If you think this is a mistake, contact an administrator',
-                    flags: ['Ephemeral']
-                });
-            }
-        }
-
-        let currentInviteRole = null;
-      if (inviteRoles.length > 0) {
-          currentInviteRole = inviteRoles.reduce((prev, current) => 
-              (prev.max_invites > current.max_invites) ? prev : current
-          );
       }
 
-      // Initialize user if they don't exist
-      if (currentInviteRole) {
-          await initializeUser(member.id, currentInviteRole.role_id, interaction.guildId);
+      await Promise.all(
+        inviteRoles.map(role => (
+          initializeUser(member.id, role.role_id, interaction.guildId)
+        ))
+      );
+
+      const userRecords = await User.find({
+        user_id: interaction.user.id,
+        guild_id: interaction.guildId
+      });
+      const balance = isAdministrator
+        ? { unlimited: true, total: -1 }
+        : calculateInviteBalance(userRecords);
+      const activeInvites = await Invite.find(
+        {
+          user_id: member.id,
+          guild_id: interaction.guildId,
+          active: { $ne: false }
+        },
+        null,
+        { sort: { created_at: 1, _id: 1 } }
+      );
+      const discordInvites = await interaction.guild.invites.fetch();
+      const validInvites = activeInvites.filter(invite => (
+        discordInvites.has(invite.invite_code)
+      ));
+      const invalidInviteCodes = activeInvites
+        .filter(invite => !discordInvites.has(invite.invite_code))
+        .map(invite => invite.invite_code);
+      const pendingDeletions = activeInvites.filter(invite => (
+        !discordInvites.has(invite.invite_code) &&
+        invite.deletion_requested_at
+      ));
+      const pendingCodes = new Set(
+        pendingDeletions.map(invite => invite.invite_code)
+      );
+      const staleInviteCodes = invalidInviteCodes.filter(code => (
+        !pendingCodes.has(code)
+      ));
+
+      for (const invite of pendingDeletions) {
+        await finalizeInviteDeletion({
+          inviteId: invite._id,
+          inviteCode: invite.invite_code,
+          userId: interaction.user.id,
+          guildId: interaction.guildId,
+          isAdministrator
+        });
       }
 
-        // Get user's invite information
-        const userInvites = await User.find({
-            user_id: interaction.user.id,
-            guild_id: interaction.guildId
+      if (staleInviteCodes.length > 0) {
+        await Invite.updateMany({
+          invite_code: { $in: staleInviteCodes },
+          guild_id: interaction.guildId,
+          user_id: interaction.user.id,
+          active: { $ne: false }
+        }, {
+          $set: { active: false }
+        }, {
+          runValidators: true
         });
+      }
 
-        // Get active invites
-        const activeInvites = await Invite.find({
-            user_id: member.id,
-            guild_id: interaction.guildId
-        });
+      const botInvites = discordInvites.filter(invite => (
+        invite.inviterId === interaction.client.user.id
+      ));
+      interaction.client.invites.set(
+        interaction.guildId,
+        new Collection(
+          botInvites.map(invite => [invite.code, invite])
+        )
+      );
 
-        // Fetch current Discord invites
-        const discordInvites = await interaction.guild.invites.fetch();
+      let response = '**Your Invite Balance:**\n';
+      response += balance.unlimited
+        ? 'You can invite unlimited people.\n\n'
+        : `You can invite ${balance.total} people.\n\n`;
 
-        // Filter out invites that no longer exist in Discord
-        const validInvites = activeInvites.filter(dbInvite => 
-            discordInvites.some(discordInvite => discordInvite.code === dbInvite.invite_code)
+      if (validInvites.length > 0) {
+        response = appendNumberedLinks(
+          `${response}**Active Invites:**\n`,
+          validInvites.map(invite => invite.link),
+          { maxLength: 1900 }
         );
+        response += '\nUse `/deleteinvite <number>` to delete a specific invite.';
+      } else {
+        response += 'Currently you have no active invites.';
+      }
 
-        // Clean up any invalid invites from database
-        const invalidInvites = activeInvites.filter(dbInvite => 
-            !discordInvites.some(discordInvite => discordInvite.code === dbInvite.invite_code)
-        );
-
-        // Remove invalid invites from database
-        if (invalidInvites.length > 0) {
-            await Invite.deleteMany({
-                invite_code: { $in: invalidInvites.map(inv => inv.invite_code) },
-                guild_id: interaction.guildId
-            });
+      await interaction.client.logger.logToFile(
+        'Invites command used',
+        'command_usage',
+        {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag,
+          command: 'invites'
         }
+      );
 
-
-        // Calculate total remaining invites
-        // Check if ANY role has unlimited invites first
-        const hasUnlimited = userInvites.some(role => role.invites_remaining === -1);
-        const totalInvites = hasUnlimited
-            ? -1
-            : userInvites.reduce((sum, role) => sum + role.invites_remaining, 0);
-
-        let response = '**Your Invite Balance:**\n';
-        if (totalInvites === -1) {
-            response += 'You can invite unlimited people.\n\n';
-        } else {
-            response += `You can invite ${totalInvites} people.\n\n`;
-        }
-
-        if (validInvites.length > 0) {
-            response += '**Active Invites:**\n';
-            validInvites.forEach((invite, index) => {
-                response += `${index + 1}. ${invite.link}\n`;
-            });
-            response += '\nUse `/deleteinvite <number>` to delete a specific invite.';
-        } else {
-            response += 'Currently you have no active invites.';
-        }
-
-        // Log command usage
-        interaction.client.logger.logToFile("Invites Command usage", "command_usage", {
-            guildId: interaction.guildId,
-            guildName: interaction.guild.name,
-            userId: interaction.user.id,
-            username: interaction.user.tag,
-            command: 'invites'
-        });
-
-        await interaction.editReply({
-            content: response,
-            flags: ['Ephemeral']
-        });
-
+      await interaction.editReply({ content: response });
     } catch (error) {
-        console.error('Error in invites command:', error);
+      console.error('Error in invites command:', error);
+      await interaction.client.logger.logToFile(
+        `Error in invites command: ${error.message}`,
+        'error',
+        {
+          guildId: interaction.guildId,
+          guildName: interaction.guild.name,
+          userId: interaction.user.id,
+          username: interaction.user.tag
+        }
+      );
 
-        // Log error
-        interaction.client.logger.logToFile("Error in invites command", "error", {
-            guildId: interaction.guildId,
-            guildName: interaction.guild.name,
-            userId: interaction.user.id,
-            username: interaction.user.tag,
-            message: error.message
-        });
-
-        await interaction.editReply({
-            content: 'There was an error checking your invites.',
-            flags: ['Ephemeral']
-        });
+      await interaction.editReply({
+        content: 'There was an error checking your invites.'
+      });
     }
   }
-}; 
+};

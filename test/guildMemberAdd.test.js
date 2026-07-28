@@ -20,6 +20,9 @@ function createMemberFixture() {
         user_id: 'inviter-1'
     };
     const client = {
+        user: {
+            id: 'bot-1'
+        },
         invites: new Collection([[guildId, new Collection()]]),
         recentlyDeletedInvites: new Collection([
             [recentInvite.code, recentInvite]

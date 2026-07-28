@@ -9,7 +9,8 @@ A Discord bot for managing server invites through a role-based permission system
 - Automatic invite allocation when members receive configured roles
 - Support for multiple roles with different invite limits per user
 - Administrators automatically receive unlimited invites
-- Invite limits persist across role changes
+- Finite credits persist after a configured role is removed; unlimited access
+  ends when the role that granted it is removed
 
 ### Invite Creation and Tracking
 - Create single-use invite links that automatically track usage
@@ -97,8 +98,9 @@ A Discord bot for managing server invites through a role-based permission system
 
 - `/deleteinvite <number>` - Delete a specific invite link
   - Reference invite by number from your `/invites` list
-  - Automatically refunds one invite to your balance
-  - Removes invite from Discord and database
+  - Refunds the exact role balance originally charged
+  - Removes the Discord invite and retains an inactive database record for
+    attribution history
 
 - `/help` - Display command list and descriptions
   - Shows all commands available to you
@@ -108,7 +110,8 @@ A Discord bot for managing server invites through a role-based permission system
 
 ### Prerequisites
 - Node.js 24.17.0 or newer
-- MongoDB database (local or cloud instance)
+- MongoDB replica set or sharded cluster with transaction support (for example,
+  MongoDB Atlas)
 - Discord Bot Application with necessary permissions and intents enabled
 
 ### Installation
@@ -128,7 +131,6 @@ A Discord bot for managing server invites through a role-based permission system
    ```env
    BOT_TOKEN=your_bot_token
    CLIENT_ID=your_client_id
-   APPLICATION_ID=your_application_id
    GUILD_ID=your_guild_id
    MONGODB_URI=your_mongodb_connection_string
    ```
@@ -136,7 +138,6 @@ A Discord bot for managing server invites through a role-based permission system
    **Environment Variables:**
    - `BOT_TOKEN` - Your Discord bot token from the Developer Portal
    - `CLIENT_ID` - Your Discord application's client ID
-   - `APPLICATION_ID` - Your Discord application ID (usually same as client ID)
    - `GUILD_ID` - Server ID for testing (optional, for development)
    - `MONGODB_URI` - MongoDB connection string
 
@@ -154,19 +155,19 @@ take longer to propagate.
 
 - `npm start` - Register slash commands, then start the Discord bot.
 - `npm run deploy` - Register slash commands without starting the bot.
+- `npm test` - Run the local Node.js regression suite without contacting
+  Discord or MongoDB.
 
-Both scripts call the live Discord API and require valid Discord credentials.
-They are operational commands, not local tests.
+The `start` and `deploy` scripts call the live Discord API and require valid
+Discord credentials. They are operational commands, not local tests.
 
 ### First-Time Server Setup
 
 After adding the bot to your Discord server:
 
 1. Ensure the bot has all required permissions (see below)
-2. Set up a system messages channel in Server Settings > Overview
-3. Enable "Show Join Messages" for the system messages channel
-4. Run `/setup` in your server to configure the bot
-5. Use `/setrole` to configure which roles can create invites
+2. Run `/setup` in your server to configure the bot
+3. Use `/setrole` to configure which roles can create invites
 
 ## Development References
 
@@ -184,28 +185,23 @@ interactions, and rate limits.
 
 ## Required Bot Permissions
 
-The bot requires the following permissions to function properly:
+The bot requires:
 
-- **View Audit Log** - Track invite usage
-- **Manage Server** - Required for invite management
-- **Manage Roles** - Assign default roles to new members; the bot's highest
-  role must be above the configured default role
-- **Manage Channels** - Access channel configurations
-- **Create Instant Invite** - Generate invite links
-- **View Channels** - Access server channels
-- **Send Messages** - Send responses and logs
-- **Send Messages in Threads** - Thread support
-- **Embed Links** - Format log messages
-- **Read Message History** - Context for commands
-- **Use Application Commands** - Slash command functionality
+- **Manage Server** at guild level to fetch the server invite list.
+- **Manage Channels**, **Create Instant Invite**, **View Channel**, and
+  **Send Messages** in the configured bot-command channel. Discord only sends
+  invite create/delete gateway events to bots with effective Manage Channels
+  permission on the invite's channel.
+- **View Channel**, **Send Messages**, and **Embed Links** in the configured
+  logs channel.
+- **Manage Roles** only when a default invite role is configured. The bot's
+  highest role must be above that role.
 
 ## Required Gateway Intents
 
-Enable these intents in the Discord Developer Portal under Bot settings:
-
-- **Server Members Intent** - Track member joins and role changes
-- **Guild Invites Intent** - Monitor invite creation and usage
-- **Guilds Intent** - Access server information
+Enable **Server Members Intent** under Privileged Gateway Intents in the
+Discord Developer Portal. The bot configures the standard **Guilds** and
+**Guild Invites** intents in code; they do not require a portal toggle.
 
 Note: Message Content Intent is not required for this bot.
 
@@ -218,7 +214,6 @@ Stores server-specific configuration settings.
 - `guild_id` - Discord server ID
 - `logs_channel_id` - Channel for bot logs
 - `bot_channel_id` - Channel where bot commands can be used
-- `system_channel_id` - Server's system messages channel
 - `default_invite_role` - Role assigned to members joining via tracked invites
 - `setup_completed` - Boolean indicating if initial setup is complete
 
@@ -238,12 +233,17 @@ Tracks user invite balances per role.
 - `created_at` - Record creation timestamp
 
 ### Invite
-Tracks all active invite links created through the bot.
+Tracks invite links created through the bot, including inactive records kept
+for join attribution.
 - `user_id` - Creator's Discord user ID
 - `guild_id` - Discord server ID
 - `link` - Full invite URL
 - `invite_code` - Short invite code
 - `max_uses` - Maximum uses (always 1 for single-use invites)
+- `debited_role_id` - Role balance charged when the invite was created
+- `active` - Whether the invite is still active on Discord
+- `deletion_requested_at` - Durable marker used to finish an interrupted
+  deletion and refund exactly once
 - `created_at` - Invite creation timestamp
 
 ### JoinTracking
@@ -260,7 +260,8 @@ Records member joins via tracked invites.
 2. When a member receives a configured role, they automatically get the specified invite allocation
 3. If a member has multiple configured roles, they receive invites for each role
 4. Members with Administrator permission automatically get unlimited invites
-5. Invite balances persist even if roles are changed or removed
+5. Finite credits persist when roles are removed; unlimited sentinel records
+   are removed with their granting role
 
 ### Invite Creation and Usage
 1. Members use `/createinvite` to generate a single-use invite link
@@ -271,8 +272,10 @@ Records member joins via tracked invites.
 
 ### Invite Deletion
 1. Members can delete their invites using `/deleteinvite`
-2. The invite is removed from both Discord and the database
-3. One invite credit is automatically refunded to the creator
+2. The deletion intent is recorded before the Discord invite is removed
+3. The database record becomes inactive; interrupted finalization is retried
+   by the invite event or the next `/invites` refresh
+4. One credit is refunded to the exact finite role balance originally charged
 
 ## Error Handling
 
@@ -282,7 +285,8 @@ The bot includes comprehensive error handling:
 - **Setup Validation** - Ensures server is properly configured before command execution
 - **Database Errors** - Graceful handling of connection issues and query failures
 - **Discord API Errors** - Proper handling of rate limits and API failures
-- **Concurrent Operations** - Atomic database operations prevent race conditions
+- **Concurrent Operations** - Atomic updates and MongoDB transactions prevent
+  race conditions and partial multi-record changes
 - **Channel Access** - Validates bot can access required channels
 - **Graceful Shutdown** - Proper cleanup of database connections and bot client
 
@@ -292,7 +296,8 @@ All errors are logged to both console and log files for debugging.
 
 The bot maintains comprehensive logs:
 
-- **File Logs** - JSON-formatted logs stored in `logs/` directory
+- **File Logs** - Timestamped text logs with structured JSON metadata stored in
+  `logs/`
 - **Channel Logs** - Important events posted to designated logs channel
 - **Automatic Cleanup** - Old log files automatically deleted after retention period
 - **Event Types** - Setup, invite creation/usage/deletion, role changes, errors, and more

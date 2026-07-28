@@ -1,11 +1,20 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+    InteractionContextType,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
 const { User } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
+const {
+    addInviteCredits,
+    calculateInviteBalance
+} = require('../utils/inviteBalances');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('addinvites')
         .setDescription('Add invites to a user')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addUserOption(option =>
             option.setName('user')
@@ -14,7 +23,8 @@ module.exports = {
         .addIntegerOption(option =>
             option.setName('amount')
                 .setDescription('Amount of invites to give')
-                .setRequired(true)),
+                .setRequired(true)
+                .setMinValue(1)),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -26,6 +36,19 @@ module.exports = {
             const targetUser = interaction.options.getUser('user');
             const amount = interaction.options.getInteger('amount');
             const member = await interaction.guild.members.fetch(targetUser.id);
+
+            if (!Number.isInteger(amount) || amount < 1) {
+                return await interaction.editReply({
+                    content: '❌ The invite amount must be a positive integer.'
+                });
+            }
+
+            if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return await interaction.editReply({
+                    content: `✅ ${targetUser} already has unlimited invites as an Administrator.`
+                });
+            }
+
             // Get all roles with invite configurations for this user
             const userRoles = await User.find({
                 user_id: targetUser.id,
@@ -33,8 +56,8 @@ module.exports = {
             });
 
             // Check if user has unlimited invites
-            const hasUnlimitedInvites = userRoles.some(role => role.invites_remaining === -1);
-            if (hasUnlimitedInvites) {
+            const balance = calculateInviteBalance(userRoles);
+            if (balance.unlimited) {
                 return await interaction.editReply({
                     content: `✅ ${targetUser} already has unlimited invites.`
                 });
@@ -46,42 +69,20 @@ module.exports = {
                 });
             }
 
-            // Find the role with the lowest non-negative invite count
-            const roleToUpdate = userRoles.reduce((lowest, current) => {
-                if (current.invites_remaining >= 0) {
-                    if (!lowest || current.invites_remaining < lowest.invites_remaining) {
-                        return current;
-                    }
-                }
-                return lowest;
-            }, null);
+            const updatedRole = await addInviteCredits({
+                userId: targetUser.id,
+                guildId: interaction.guildId,
+                amount
+            });
 
-            if (roleToUpdate) {
-                // Update user's invites and get the updated document
-                const updatedUser = await User.findOneAndUpdate(
-                    { _id: roleToUpdate._id },
-                    { $inc: { invites_remaining: amount } },
-                    { new: true }  // This returns the updated document
-                );
-
-                // Get total invites across all roles after update
-                const totalInvites = await User.aggregate([
-                    {
-                        $match: {
-                            user_id: targetUser.id,
-                            guild_id: interaction.guildId
-                        }
-                    },
-                    {
-                        $group: {
-                            _id: null,
-                            total: { $sum: "$invites_remaining" }
-                        }
-                    }
-                ]);
-
+            if (updatedRole) {
+                const updatedRecords = await User.find({
+                    user_id: targetUser.id,
+                    guild_id: interaction.guildId
+                });
+                const updatedBalance = calculateInviteBalance(updatedRecords);
                 // Log the invite addition to file
-                interaction.client.logger.logToFile(`Added ${amount} invites to user ${targetUser.tag}`, "invite_add", {
+                await interaction.client.logger.logToFile(`Added ${amount} invites to user ${targetUser.tag}`, "invite_add", {
                     guildId: interaction.guildId,
                     guildName: interaction.guild.name,
                     userId: interaction.user.id,
@@ -90,7 +91,7 @@ module.exports = {
 
                 await interaction.editReply({
                     content: `✅ Successfully added ${amount} invites to ${targetUser}.`+
-                        `\nThey now have ${totalInvites[0]?.total || 0} invites remaining.`
+                        `\nThey now have ${updatedBalance.total} invites remaining.`
                 });
 
                 // Log the action with the correct total
@@ -99,7 +100,7 @@ module.exports = {
                     `Admin: <@${interaction.user.id}>\n` +
                     `User: <@${targetUser.id}>\n` +
                     `Amount: +${amount}\n` +
-                    `New Total: ${totalInvites[0]?.total || 0}`
+                    `New Total: ${updatedBalance.total}`
                 );
             } else {
                 await interaction.editReply({
@@ -114,4 +115,4 @@ module.exports = {
             });
         }
     }
-}; 
+};

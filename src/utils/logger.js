@@ -2,6 +2,17 @@ const { ServerConfig } = require('../models/schemas');
 const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs").promises;
+const ALLOWED_METADATA_KEYS = new Set([
+    'activeInviteCount',
+    'channelName',
+    'command',
+    'error',
+    'inviteNumber',
+    'maxInvites',
+    'message',
+    'refunded',
+    'roleId'
+]);
 
 // Ensure the logs directory exists
 const logsDir = path.join(__dirname, "..", "..", "logs");
@@ -30,13 +41,16 @@ class Logger {
             }
 
             const channel = await this.client.channels.fetch(config.logs_channel_id);
-            if (channel) {
-                await channel.send(message);
+            if (
+                !channel?.isTextBased?.() ||
+                typeof channel.send !== 'function'
+            ) {
+                throw new TypeError('Configured logs channel is not text-based');
             }
+            await channel.send(message);
         } catch (error) {
             console.error('Error logging to channel:', error);
-            // Log the error to file
-            this.logToFile(`Failed to log to Discord channel: ${error.message}`, 'error', {
+            await this.logToFile(`Failed to log to Discord channel: ${error.message}`, 'error', {
                 guildId: guildId
             });
         }
@@ -64,8 +78,7 @@ class Logger {
             username,
             inviteCode,
             roleName,
-            channelName,
-            maxInvites
+            ...metadata
         } = options;
 
         // Create guild-specific or general bot log file
@@ -79,10 +92,31 @@ class Logger {
         const userInfo = username && userId ? `user: ${username} (${userId}) ` : "";
         const inviteInfo = inviteCode ? `invite: ${inviteCode} ` : "";
         const roleInfo = roleName ? `role: ${roleName} ` : "";
-
-        const logMessage = `${timestamp} [${type.toUpperCase()}] - ${userInfo}${inviteInfo}${roleInfo}${message}\n`;
-
         try {
+            const approvedMetadata = Object.fromEntries(
+                Object.entries(metadata).filter(([key]) => (
+                    ALLOWED_METADATA_KEYS.has(key)
+                ))
+            );
+            let metadataInfo = "";
+            if (Object.keys(approvedMetadata).length > 0) {
+                try {
+                    metadataInfo = `details: ${JSON.stringify(
+                        approvedMetadata,
+                        (_key, value) => (
+                            typeof value === 'bigint'
+                                ? value.toString()
+                                : value
+                        )
+                    )} `;
+                } catch {
+                    metadataInfo = 'details: [unserializable metadata] ';
+                }
+            }
+
+            const logMessage = `${timestamp} [${String(type).toUpperCase()}] - ` +
+                `${userInfo}${inviteInfo}${roleInfo}${metadataInfo}${message}\n`;
+
             // Append to log file using promises
             await fsPromises.appendFile(filePath, logMessage);
         } catch (err) {
@@ -104,6 +138,10 @@ class Logger {
      * @param {number} daysToKeep - Number of days to keep logs for
      */
     async cleanOldLogs(daysToKeep = 30) {
+        if (!Number.isFinite(daysToKeep) || daysToKeep < 0) {
+            throw new TypeError('daysToKeep must be a non-negative number');
+        }
+
         const now = Date.now();
         const maxAge = daysToKeep * 24 * 60 * 60 * 1000;
 
@@ -111,11 +149,16 @@ class Logger {
             const files = await fsPromises.readdir(logsDir);
 
             for (const file of files) {
+                if (!file.endsWith('.log')) continue;
+
                 const filePath = path.join(logsDir, file);
                 try {
                     const stats = await fsPromises.stat(filePath);
 
-                    if (now - stats.mtime.getTime() > maxAge) {
+                    if (
+                        stats.isFile() &&
+                        now - stats.mtime.getTime() > maxAge
+                    ) {
                         await fsPromises.unlink(filePath);
                         console.log(`Deleted old log file: ${file}`);
                     }

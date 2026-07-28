@@ -1,4 +1,9 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const {
+    EmbedBuilder,
+    InteractionContextType,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
 const { Role } = require('../models/schemas');
 const checkRequirements = require('../utils/checkRequirements');
 
@@ -6,6 +11,7 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('currentconfig')
         .setDescription('Show current bot configuration for this server')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
@@ -49,23 +55,30 @@ module.exports = {
             const configuredRoles = await Role.find({ guild_id: interaction.guildId });
             
             if (configuredRoles.length > 0) {
-                // Sort roles by max_invites (highest first)
-                configuredRoles.sort((a, b) => b.max_invites - a.max_invites);
-                
-                let rolesText = '**Role Invite Limits:**\n';
+                configuredRoles.sort((a, b) => {
+                    if (a.max_invites === -1) return -1;
+                    if (b.max_invites === -1) return 1;
+                    return b.max_invites - a.max_invites;
+                });
+
+                const roleLines = [];
                 for (const roleData of configuredRoles) {
                     const role = interaction.guild.roles.cache.get(roleData.role_id);
                     const inviteLimit = roleData.max_invites === -1 ? '♾️ Unlimited' : `${roleData.max_invites}`;
                     
                     if (role) {
-                        rolesText += `${role}: ${inviteLimit} invites\n`;
+                        roleLines.push(`${role}: ${inviteLimit} invites\n`);
                     }
                 }
 
-                embed.addFields({
-                    name: '🎭 Role Configuration',
-                    value: rolesText
-                });
+                if (roleLines.length > 0) {
+                    embed.addFields(...buildRoleFields(roleLines));
+                } else {
+                    embed.addFields({
+                        name: '🎭 Role Configuration',
+                        value: 'Configured role IDs no longer exist in this server.'
+                    });
+                }
             } else {
                 embed.addFields({
                     name: '🎭 Role Configuration',
@@ -81,7 +94,8 @@ Use these commands to modify settings:
 • \`/changedefaults logschannel\` - Change logs channel
 • \`/changedefaults botchannel\` - Change bot commands channel
 • \`/changedefaults defaultrole\` - Change default invite role
-• \`/setinvites\` - Modify role invite limits
+• \`/setrole\` - Set role invite limits
+• \`/unsetrole\` - Remove role invite limits
 \nUse \`/help\` to show all commands
                 `.trim()
             });
@@ -105,4 +119,42 @@ Use these commands to modify settings:
             });
         }
     }
-}; 
+};
+
+function buildRoleFields(lines) {
+    if (lines.length === 0) return [];
+
+    const chunks = [];
+    let current = '**Role Invite Limits:**\n';
+    let consumed = 0;
+
+    for (const line of lines) {
+        if (chunks.length === 4 && current.length + line.length > 900) {
+            break;
+        }
+        if (current.length + line.length > 900) {
+            chunks.push(current);
+            current = '';
+        }
+        current += line;
+        consumed++;
+    }
+    if (current) chunks.push(current);
+
+    const omitted = lines.length - consumed;
+    if (omitted > 0) {
+        const suffix = `\n…and ${omitted} more configured role${omitted === 1 ? '' : 's'}.`;
+        const lastIndex = chunks.length - 1;
+        chunks[lastIndex] =
+            `${chunks[lastIndex].slice(0, 1024 - suffix.length)}${suffix}`;
+    }
+
+    return chunks.map((value, index) => ({
+        name: index === 0
+            ? '🎭 Role Configuration'
+            : '🎭 Role Configuration (continued)',
+        value
+    }));
+}
+
+module.exports.buildRoleFields = buildRoleFields;

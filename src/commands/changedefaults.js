@@ -1,11 +1,21 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const {
+    ChannelType,
+    InteractionContextType,
+    PermissionFlagsBits,
+    SlashCommandBuilder
+} = require('discord.js');
 const { ServerConfig } = require('../models/schemas');
+const {
+    findMissingChannelPermissions,
+    REQUIRED_CHANNEL_PERMISSIONS
+} = require('../utils/channelPermissions');
 const checkRequirements = require('../utils/checkRequirements');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('changedefaults')
         .setDescription('Change default server settings')
+        .setContexts(InteractionContextType.Guild)
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addSubcommand(subcommand =>
             subcommand
@@ -15,9 +25,7 @@ module.exports = {
                     option.setName('channel')
                         .setDescription('The new logs channel')
                         .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true)
-                )
-        )
+                        .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('botchannel')
@@ -26,9 +34,7 @@ module.exports = {
                     option.setName('channel')
                         .setDescription('The new bot commands channel')
                         .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true)
-                )
-        )
+                        .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('defaultrole')
@@ -36,8 +42,7 @@ module.exports = {
                 .addRoleOption(option =>
                     option.setName('role')
                         .setDescription('The new default invite role')
-                        .setRequired(false)
-                )
+                        .setRequired(false))
                 .addStringOption(option =>
                     option.setName('delete')
                         .setDescription('Remove the current default role?')
@@ -45,174 +50,22 @@ module.exports = {
                             { name: 'Yes', value: 'yes' },
                             { name: 'No', value: 'no' }
                         )
-                        .setRequired(false)
-                )
-        ),
+                        .setRequired(false))),
 
     async execute(interaction) {
         await interaction.deferReply();
 
         const serverConfig = await checkRequirements(interaction);
-        if (!serverConfig) return;  // Exit if checks failed
+        if (!serverConfig) return;
 
         try {
             const subcommand = interaction.options.getSubcommand();
-            
 
-            // Check for same-value settings and role hierarchy
-            switch(subcommand) {
-                case 'botchannel': {
-                    const newChannel = interaction.options.getChannel('channel');
-                    if (newChannel.id === serverConfig.bot_channel_id) {
-                        return await interaction.editReply({
-                            content: `❌ ${newChannel} is already set as the bot commands channel.`
-                        });
-                    }
-                    break;
-                }
-                case 'logschannel': {
-                    const newChannel = interaction.options.getChannel('channel');
-                    if (newChannel.id === serverConfig.logs_channel_id) {
-                        return await interaction.editReply({
-                            content: `❌ ${newChannel} is already set as the logs channel.`
-                        });
-                    }
-                    break;
-                }
-                case 'defaultrole': {
-                    const deleteOption = interaction.options.getString('delete');
-                    const newRole = interaction.options.getRole('role');
-
-                    // Handle deletion request
-                    if (deleteOption === 'yes') {
-                        if (!serverConfig.default_invite_role) {
-                            return await interaction.editReply({
-                                content: '❌ There is no default invite role set to remove.'
-                            });
-                        }
-
-                        await ServerConfig.findOneAndUpdate(
-                            { guild_id: interaction.guildId },
-                            { $unset: { default_invite_role: "" } }
-                        );
-
-                        await interaction.client.logger.logToChannel(interaction.guildId,
-                            `⚙️ **Bot Settings Updated**\n` +
-                            `Admin: <@${interaction.user.id}>\n` +
-                            `Change: Default invite role removed`
-                        );
-
-                        // Log the default role removal
-                        interaction.client.logger.logToFile(`Default invite role removed`, "settings", {
-                            guildId: interaction.guildId,
-                            guildName: interaction.guild.name,
-                            userId: interaction.user.id,
-                            username: interaction.user.tag
-                        });
-
-
-                        return await interaction.editReply({
-                            content: '✅ Default invite role has been removed.'
-                        });
-                    }
-
-                    // If not deleting, require a role
-                    if (!newRole) {
-                        return await interaction.editReply({
-                            content: '❌ You must provide a role to set as default, or use delete=yes to remove the current default role.'
-                        });
-                    }
-
-                    // Continue with existing role change logic
-                    if (newRole.id === serverConfig.default_invite_role) {
-                        return await interaction.editReply({
-                            content: `❌ ${newRole} is already set as the default invite role.`
-                        });
-                    }
-
-                    if (!newRole.editable) {
-                        return await interaction.editReply({
-                            content: `❌ I cannot assign ${newRole} as the default invite role.\n\n` +
-                                'Make sure:\n' +
-                                '1. The bot has the **Manage Roles** permission\n' +
-                                '2. The bot\'s highest role is above the selected role\n' +
-                                '3. The selected role is not managed by another integration'
-                        });
-                    }
-
-                    await ServerConfig.findOneAndUpdate(
-                        { guild_id: interaction.guildId },
-                        { default_invite_role: newRole.id }
-                    );
-
-                    await interaction.client.logger.logToChannel(interaction.guildId,
-                        `⚙️ **Bot Settings Updated**\n` +
-                        `Admin: <@${interaction.user.id}>\n` +
-                        `Change: Default invite role updated to ${newRole}`
-                    );
-
-                    await interaction.editReply({
-                        content: `✅ Default invite role updated to ${newRole}`
-                    });
-                    break;
-                }
+            if (subcommand === 'defaultrole') {
+                return await updateDefaultRole(interaction, serverConfig);
             }
 
-            // Only handle logschannel and botchannel here
-            // defaultrole is already fully handled above
-            if (subcommand !== 'defaultrole') {
-                let updateData = {};
-                let successMessage = '';
-
-                switch (subcommand) {
-                    case 'logschannel':
-                        const logsChannel = interaction.options.getChannel('channel');
-                        updateData = { logs_channel_id: logsChannel.id };
-                        successMessage = `✅ Logs channel updated to ${logsChannel}`;
-
-                        // Log the logs channel change
-                        interaction.client.logger.logToFile(`Logs channel changed to ${logsChannel.name}`, "settings", {
-                            guildId: interaction.guildId,
-                            guildName: interaction.guild.name,
-                            userId: interaction.user.id,
-                            username: interaction.user.tag
-                        });
-                        break;
-
-                    case 'botchannel':
-                        const botChannel = interaction.options.getChannel('channel');
-                        updateData = { bot_channel_id: botChannel.id };
-                        successMessage = `✅ Bot commands channel updated to ${botChannel}`;
-
-                        // Log the bot channel change
-                        interaction.client.logger.logToFile(`Bot commands channel changed to ${botChannel.name}`, "settings", {
-                            guildId: interaction.guildId,
-                            guildName: interaction.guild.name,
-                            userId: interaction.user.id,
-                            username: interaction.user.tag
-                        });
-                        break;
-                }
-
-                // Update the server config
-                await ServerConfig.findOneAndUpdate(
-                    { guild_id: interaction.guildId },
-                    updateData,
-                    { upsert: true }
-                );
-
-                // Log the change
-                await interaction.client.logger.logToChannel(interaction.guildId,
-                    `⚙️ **Bot Settings Updated**\n` +
-                    `Admin: <@${interaction.user.id}>\n` +
-                    `Change: ${successMessage}`
-                );
-
-                await interaction.editReply({
-                    content: successMessage
-                });
-            }
-
+            return await updateChannel(interaction, serverConfig, subcommand);
         } catch (error) {
             console.error('Error changing defaults:', error);
             await interaction.editReply({
@@ -221,3 +74,137 @@ module.exports = {
         }
     }
 };
+
+async function updateDefaultRole(interaction, serverConfig) {
+    const deleteOption = interaction.options.getString('delete');
+    const newRole = interaction.options.getRole('role');
+
+    if (deleteOption === 'yes') {
+        if (!serverConfig.default_invite_role) {
+            return interaction.editReply({
+                content: '❌ There is no default invite role set to remove.'
+            });
+        }
+
+        await ServerConfig.findOneAndUpdate(
+            { guild_id: interaction.guildId },
+            { $unset: { default_invite_role: 1 } },
+            { runValidators: true }
+        );
+        await logSettingsChange(
+            interaction,
+            'Default invite role removed',
+            'Default invite role removed'
+        );
+        return interaction.editReply({
+            content: '✅ Default invite role has been removed.'
+        });
+    }
+
+    if (!newRole) {
+        return interaction.editReply({
+            content: '❌ Provide a role to set, or use `delete: Yes` to remove the current default role.'
+        });
+    }
+    if (newRole.id === serverConfig.default_invite_role) {
+        return interaction.editReply({
+            content: `❌ ${newRole} is already the default invite role.`
+        });
+    }
+    if (!newRole.editable) {
+        return interaction.editReply({
+            content: `❌ I cannot assign ${newRole} as the default invite role.\n\n` +
+                'Make sure the bot has **Manage Roles**, its highest role is above the selected role, and the role is not managed by an integration.'
+        });
+    }
+
+    await ServerConfig.findOneAndUpdate(
+        { guild_id: interaction.guildId },
+        { $set: { default_invite_role: newRole.id } },
+        { runValidators: true }
+    );
+    await logSettingsChange(
+        interaction,
+        `Default invite role updated to ${newRole}`,
+        `Default invite role changed to ${newRole.name}`
+    );
+    return interaction.editReply({
+        content: `✅ Default invite role updated to ${newRole}.`
+    });
+}
+
+async function updateChannel(interaction, serverConfig, subcommand) {
+    const channel = interaction.options.getChannel('channel');
+    const isLogsChannel = subcommand === 'logschannel';
+    const currentChannelId = isLogsChannel
+        ? serverConfig.logs_channel_id
+        : serverConfig.bot_channel_id;
+    const settingName = isLogsChannel
+        ? 'logs channel'
+        : 'bot commands channel';
+
+    if (channel.id === currentChannelId) {
+        return interaction.editReply({
+            content: `❌ ${channel} is already the ${settingName}.`
+        });
+    }
+
+    const botMember = interaction.guild.members.me;
+    if (!botMember) {
+        return interaction.editReply({
+            content: '❌ Cannot resolve the bot member for permission checks. Please try again.'
+        });
+    }
+
+    const requirements = isLogsChannel
+        ? REQUIRED_CHANNEL_PERMISSIONS.logs
+        : REQUIRED_CHANNEL_PERMISSIONS.commands;
+    const missingPermissions = findMissingChannelPermissions(
+        channel,
+        botMember,
+        requirements
+    );
+    if (missingPermissions.length > 0) {
+        return interaction.editReply({
+            content: `❌ Missing permissions in ${channel}: ${missingPermissions.join(', ')}.`
+        });
+    }
+
+    const update = isLogsChannel
+        ? { logs_channel_id: channel.id }
+        : { bot_channel_id: channel.id };
+    await ServerConfig.findOneAndUpdate(
+        { guild_id: interaction.guildId },
+        { $set: update },
+        { runValidators: true }
+    );
+
+    const successMessage = `${isLogsChannel ? 'Logs' : 'Bot commands'} channel updated to ${channel}`;
+    await logSettingsChange(
+        interaction,
+        successMessage,
+        `${settingName} changed to ${channel.name}`
+    );
+    return interaction.editReply({
+        content: `✅ ${successMessage}.`
+    });
+}
+
+async function logSettingsChange(interaction, channelMessage, fileMessage) {
+    await interaction.client.logger.logToFile(
+        fileMessage,
+        'settings',
+        {
+            guildId: interaction.guildId,
+            guildName: interaction.guild.name,
+            userId: interaction.user.id,
+            username: interaction.user.tag
+        }
+    );
+    await interaction.client.logger.logToChannel(
+        interaction.guildId,
+        `⚙️ **Bot Settings Updated**\n` +
+        `Admin: <@${interaction.user.id}>\n` +
+        `Change: ${channelMessage}`
+    );
+}

@@ -30,7 +30,8 @@ module.exports = {
                             // Fall back to database lookup
                             inviteInfo = await Invite.findOne({
                                 invite_code: code,
-                                guild_id: member.guild.id
+                                guild_id: member.guild.id,
+                                active: { $ne: false }
                             });
                         }
 
@@ -146,7 +147,9 @@ module.exports = {
             }
 
             // Update cache with only bot-created invites
-            const botInvites = newInvites.filter(invite => invite.inviterId === process.env.APPLICATION_ID);
+            const botInvites = newInvites.filter(invite => (
+                invite.inviterId === member.client.user.id
+            ));
             member.client.invites.set(member.guild.id, new Collection(botInvites.map(invite => [invite.code, invite])));
 
         } catch (error) {
