@@ -90,7 +90,17 @@ module.exports = {
       const logsChannel = interaction.options.getChannel('logs');
       const botChannel = interaction.options.getChannel('botchannel');
       const defaultRole = interaction.options.getRole('defaultrole');
-      
+
+      if (defaultRole && !defaultRole.editable) {
+        return await interaction.editReply({
+          content: `❌ I cannot assign ${defaultRole} as the default invite role.\n\n` +
+                  'Make sure:\n' +
+                  '1. The bot has the **Manage Roles** permission\n' +
+                  '2. The bot\'s highest role is above the selected role\n' +
+                  '3. The selected role is not managed by another integration'
+        });
+      }
+
       // Check system messages channel
       const systemChannel = guild.systemChannel;
       if (!systemChannel) {
@@ -191,4 +201,4 @@ module.exports = {
       });
     }
   }
-}; 
+};

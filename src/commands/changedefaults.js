@@ -130,11 +130,13 @@ module.exports = {
                         });
                     }
 
-                    // Check if the role is higher than the bot's role
-                    const botRole = interaction.guild.members.me.roles.highest;
-                    if (newRole.position >= botRole.position) {
+                    if (!newRole.editable) {
                         return await interaction.editReply({
-                            content: `❌ I cannot assign the ${newRole} role as it is positioned higher than or equal to my highest role (${botRole}).`
+                            content: `❌ I cannot assign ${newRole} as the default invite role.\n\n` +
+                                'Make sure:\n' +
+                                '1. The bot has the **Manage Roles** permission\n' +
+                                '2. The bot\'s highest role is above the selected role\n' +
+                                '3. The selected role is not managed by another integration'
                         });
                     }
 
@@ -218,4 +220,4 @@ module.exports = {
             });
         }
     }
-}; 
+};
