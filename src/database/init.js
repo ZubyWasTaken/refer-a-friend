@@ -1,11 +1,11 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const mongoose = require('mongoose');
 const { User, Invite, Role, JoinTracking, ServerConfig } = require('../models/schemas');
 
-// Mongoose 8.0 best practices: Set strictQuery option
+// Mongoose 9: Keep query filters restricted to schema-defined fields
 mongoose.set('strictQuery', true);
 
-// MongoDB Driver 6.x: Connection event handlers for monitoring
+// Mongoose connection event handlers for monitoring
 // Only set up once to avoid multiple event listeners
 let listenersSetup = false;
 
@@ -49,11 +49,11 @@ async function initDatabase() {
     // Set up connection listeners (only once)
     setupConnectionListeners();
     try {
-        // Mongoose 8 with MongoDB Driver 6 connection options
-        // Note: keepAlive is permanently enabled in driver 6.x
+        // Mongoose 9 with MongoDB Driver 7 connection options
+        // Note: keepAlive is permanently enabled
         await mongoose.connect(process.env.MONGODB_URI, {
             dbName: 'invite_manager',
-            // Recommended options for Mongoose 8 + MongoDB Driver 6
+            // Connection timeout and pool sizing
             serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s default
             maxPoolSize: 10, // Maintain up to 10 socket connections
             minPoolSize: 2,  // Minimum 2 connections in pool
@@ -103,4 +103,4 @@ function getDatabase() {
     return mongoose.connection;
 }
 
-module.exports = { initDatabase, getDatabase, closeConnection }; 
+module.exports = { initDatabase, getDatabase, closeConnection };

@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const { Client, Collection, GatewayIntentBits, ActivityType } = require("discord.js");
 const path = require("path");
 const fs = require("fs");
@@ -369,4 +369,3 @@ process.on('uncaughtException', (error) => {
 });
 
 client.login(process.env.BOT_TOKEN);
-

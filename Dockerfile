@@ -1,5 +1,5 @@
-# Use Node.js 21 as base image
-FROM node:21-slim
+# Use Node.js 24 as required by discord.js
+FROM node:24-slim
 
 # Set working directory
 WORKDIR /app
@@ -19,8 +19,8 @@ RUN if getent group users > /dev/null 2>&1; then \
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --omit=dev
+# Install the exact production dependencies from package-lock.json
+RUN npm ci --omit=dev
 
 # Copy application code (no chown here)
 COPY . .

@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -42,4 +42,4 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     // Debug: Log full error
     console.error('Error deploying commands:', error);
   }
-})(); 
+})();
