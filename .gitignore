@@ -50,7 +50,7 @@ TODO.md
 NOTES.md
 
 # Agent-generated plans and specifications
-docs/superpowers/
+/docs/superpowers/
 
 # Local Git worktrees used for isolated agent tasks
 .worktrees/
