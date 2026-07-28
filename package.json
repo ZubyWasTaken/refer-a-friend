@@ -4,6 +4,7 @@
   "description": "Discord bot for managing invites with role-based permissions",
   "main": "src/index.js",
   "scripts": {
+    "test": "node --test",
     "start": "node src/deploy-commands.js && node src/index.js",
     "deploy": "node src/deploy-commands.js"
   },

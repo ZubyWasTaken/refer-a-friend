@@ -6,22 +6,25 @@ module.exports = {
     name: 'guildMemberAdd',
     async execute(member) {
         try {
-            const cachedInvites = member.client.invites.get(member.guild.id);
+            const cachedInvites = member.client.invites.get(member.guild.id)?.clone();
             const newInvites = await member.guild.invites.fetch();
 
-            let usedInvite = null;
             let usedInviteCode = null;
             let inviteInfo = null;
 
             // First check for missing invites (invite was used and may have been deleted)
             if (cachedInvites) {
-                for (const [code, invite] of cachedInvites) {
+                for (const [code] of cachedInvites) {
                     if (!newInvites.has(code)) {
                         usedInviteCode = code;
 
                         // Check recently deleted invites first (using invite code as key)
                         const recentlyDeletedInvite = member.client.recentlyDeletedInvites?.get(code);
-                        if (recentlyDeletedInvite && Date.now() - recentlyDeletedInvite.timestamp < TIME.DELETED_INVITE_MATCH_WINDOW) {
+                        if (
+                            recentlyDeletedInvite &&
+                            recentlyDeletedInvite.guildId === member.guild.id &&
+                            Date.now() - recentlyDeletedInvite.timestamp < TIME.DELETED_INVITE_MATCH_WINDOW
+                        ) {
                             inviteInfo = recentlyDeletedInvite;
                         } else {
                             // Fall back to database lookup
@@ -36,12 +39,74 @@ module.exports = {
                 }
             }
 
+            // inviteDelete may remove the single-use invite from the shared cache
+            // before guildMemberAdd runs. Fall back to the newest recent deletion
+            // for this guild when the snapshot comparison cannot identify it.
+            if (!inviteInfo && member.client.recentlyDeletedInvites) {
+                for (const [code, deletedInvite] of member.client.recentlyDeletedInvites) {
+                    const isCandidate =
+                        deletedInvite.guildId === member.guild.id &&
+                        Date.now() - deletedInvite.timestamp < TIME.DELETED_INVITE_MATCH_WINDOW;
+
+                    if (!isCandidate) continue;
+
+                    if (!inviteInfo || deletedInvite.timestamp > inviteInfo.timestamp) {
+                        usedInviteCode = code;
+                        inviteInfo = deletedInvite;
+                    }
+                }
+            }
+
+            // Consume a matched deletion so it cannot be attributed twice.
+            if (
+                inviteInfo &&
+                member.client.recentlyDeletedInvites?.get(usedInviteCode) === inviteInfo
+            ) {
+                member.client.recentlyDeletedInvites.delete(usedInviteCode);
+            }
+
             // If we found an invite, process it
             if (inviteInfo) {
+                // Role assignment is independent of join tracking and logging.
+                // A non-critical tracking failure must not prevent access.
+                try {
+                    const serverConfig = await ServerConfig.findOne({ guild_id: member.guild.id });
+                    if (serverConfig?.default_invite_role) {
+                        const defaultRole = member.guild.roles.cache.get(serverConfig.default_invite_role);
+                        if (!defaultRole?.editable) {
+                            throw new Error('The configured default invite role is not assignable by the bot');
+                        }
+
+                        await member.roles.add(
+                            defaultRole,
+                            'Joined through a tracked referral invite'
+                        );
+
+                        // Log only after Discord confirms the role was added.
+                        await member.client.logger.logToFile(
+                            `Default invite role (${defaultRole.name}) assigned to ${member.user.tag}`,
+                            "default_role",
+                            {
+                                guildId: member.guild.id,
+                                guildName: member.guild.name,
+                                userId: member.id,
+                                username: member.user.tag,
+                                roleName: defaultRole.name,
+                                roleId: defaultRole.id
+                            }
+                        );
+                    }
+                } catch (error) {
+                    console.error('Error assigning default invite role:', error);
+                    await member.client.logger.logToChannel(
+                        member.guild.id,
+                        `❌ Failed to assign the configured default invite role to ${member.user.tag}. ` +
+                        'Make sure the bot has Manage Roles and its highest role is above the configured role.'
+                    );
+                }
 
                 try {
-                    // Log member join to file
-                    member.client.logger.logToFile("New member joined server", "join", {
+                    await member.client.logger.logToFile("New member joined server", "join", {
                         guildId: member.guild.id,
                         guildName: member.guild.name,
                         userId: member.id,
@@ -49,63 +114,34 @@ module.exports = {
                         inviteCode: usedInviteCode
                     });
 
-                    // Create join tracking record first
-                    const tracking = await JoinTracking.create({
+                    await JoinTracking.create({
                         invite_id: inviteInfo._id,
                         guild_id: member.guild.id,
                         joined_user_id: member.id
                     });
 
-                    // Then log the join
-                    await member.client.logger.logToChannel(member.guild.id,
+                    await member.client.logger.logToChannel(
+                        member.guild.id,
                         `👋 **New Member Joined**\n` +
                         `Member: <@${member.id}>\n` +
                         `Invited by: <@${inviteInfo.user_id}>\n` +
                         `Invite Code: ${usedInviteCode}`
                     );
 
-
-                    // Get the inviter's user object
                     const inviter = await member.client.users.fetch(inviteInfo.user_id);
-
-                    // Log invite usage
-                    await member.client.logger.logToFile(`New member ${member.user.tag} joined using invite ${usedInviteCode} from ${inviter.tag}`, "invite_used", {
-                        guildId: member.guild.id,
-                        guildName: member.guild.name,
-                        userId: member.id,
-                        username: member.user.tag,
-                        inviteCode: usedInviteCode
-                    });
-
-                    // Check for default role assignment
-                    const serverConfig = await ServerConfig.findOne({ guild_id: member.guild.id });
-                    if (serverConfig?.default_invite_role) {
-                        try {
-                            // Get the role object
-                            const defaultRole = member.guild.roles.cache.get(serverConfig.default_invite_role);
-
-                            // Log default role assignment
-                            member.client.logger.logToFile(`Default invite role (${defaultRole.name}) assigned to ${member.user.tag}`, "default_role", {
-                                guildId: member.guild.id,
-                                guildName: member.guild.name,
-                                userId: member.id,
-                                username: member.user.tag,
-                                roleName: defaultRole.name,
-                                roleId: serverConfig.default_invite_role
-                            });
-
-                            await member.roles.add(serverConfig.default_invite_role);
-                        } catch (error) {
-                            console.error('Error assigning default invite role:', error);
-                            await member.client.logger.logToChannel(member.guild.id,
-                                `❌ Failed to assign default invite role to ${member.user.tag}: ${error.message}`
-                            );
+                    await member.client.logger.logToFile(
+                        `New member ${member.user.tag} joined using invite ${usedInviteCode} from ${inviter.tag}`,
+                        "invite_used",
+                        {
+                            guildId: member.guild.id,
+                            guildName: member.guild.name,
+                            userId: member.id,
+                            username: member.user.tag,
+                            inviteCode: usedInviteCode
                         }
-                    }
-
+                    );
                 } catch (error) {
                     console.error('Error in join tracking:', error);
-                    console.error('Invite info:', inviteInfo);
                 }
             }
 
@@ -117,4 +153,4 @@ module.exports = {
             console.error('Error processing member join:', error);
         }
     }
-}; 
+};
