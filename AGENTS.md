@@ -144,3 +144,6 @@ alone.
   unrelated changes.
 - User-visible command, setup, permission, environment, or operational changes
   are reflected in README and help text where applicable.
+- If an implementation change causes `AGENTS.md` or `README.md` to drift from
+  the repository, flag the drift and update the affected file in the same
+  change without requesting separate permission.
