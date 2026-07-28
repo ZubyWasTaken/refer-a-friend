@@ -113,7 +113,7 @@ A Discord bot for managing server invites through a role-based permission system
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ZubyWasTaken/refer-a-friend.git
    cd refer-a-friend
    ```
 
