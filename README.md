@@ -105,7 +105,7 @@ A Discord bot for managing server invites through a role-based permission system
 ## Setup
 
 ### Prerequisites
-- Node.js (v16.9.0 or higher)
+- Node.js 24.17.0 or newer
 - MongoDB database (local or cloud instance)
 - Discord Bot Application with necessary permissions and intents enabled
 
@@ -143,6 +143,19 @@ A Discord bot for managing server invites through a role-based permission system
    npm start
    ```
 
+`npm start` first registers slash commands and then starts the bot. When
+`GUILD_ID` is set, commands are registered to that development guild for
+faster iteration. Without `GUILD_ID`, commands are registered globally and may
+take longer to propagate.
+
+### Available Scripts
+
+- `npm start` - Register slash commands, then start the Discord bot.
+- `npm run deploy` - Register slash commands without starting the bot.
+
+Both scripts call the live Discord API and require valid Discord credentials.
+They are operational commands, not local tests.
+
 ### First-Time Server Setup
 
 After adding the bot to your Discord server:
@@ -152,6 +165,20 @@ After adding the bot to your Discord server:
 3. Enable "Show Join Messages" for the system messages channel
 4. Run `/setup` in your server to configure the bot
 5. Use `/setrole` to configure which roles can create invites
+
+## Development References
+
+- [discord.js 14.27.0 API](https://discord.js.org/docs/packages/discord.js/14.27.0)
+- [discord.js guide](https://discordjs.guide/)
+- [Discord Developer Platform](https://docs.discord.com/developers/intro)
+- [Mongoose documentation](https://mongoosejs.com/docs/)
+- [MongoDB manual](https://www.mongodb.com/docs/manual/)
+- [Node.js 24 API](https://nodejs.org/docs/latest-v24.x/api/)
+- [dotenv documentation](https://github.com/motdotla/dotenv)
+
+Use the version-pinned discord.js API for library syntax and Discord's
+developer documentation for platform behavior such as permissions, intents,
+interactions, and rate limits.
 
 ## Required Bot Permissions
 
