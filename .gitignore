@@ -51,6 +51,7 @@ NOTES.md
 
 # Agent-generated plans and specifications
 /docs/superpowers/
+.superpowers/
 
 # Local Git worktrees used for isolated agent tasks
 .worktrees/
