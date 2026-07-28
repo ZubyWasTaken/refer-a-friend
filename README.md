@@ -42,6 +42,8 @@ A Discord bot for managing server invites through a role-based permission system
   - Set logs channel for bot activity tracking
   - Set bot commands channel where commands can be used
   - Optionally set default role for new members joining via invites
+  - The default role must be below the bot's highest role and must not be
+    managed by another integration
 
 - `/currentconfig` - View current server configuration
   - Display configured channels
@@ -186,7 +188,8 @@ The bot requires the following permissions to function properly:
 
 - **View Audit Log** - Track invite usage
 - **Manage Server** - Required for invite management
-- **Manage Roles** - Assign default roles to new members
+- **Manage Roles** - Assign default roles to new members; the bot's highest
+  role must be above the configured default role
 - **Manage Channels** - Access channel configurations
 - **Create Instant Invite** - Generate invite links
 - **View Channels** - Access server channels
@@ -308,7 +311,8 @@ For support:
 ## Security and Permissions
 
 - All administrative commands require Administrator permission
-- Bot respects Discord's role hierarchy
+- Default invite roles are validated against Discord permissions, managed-role
+  restrictions, and the bot's role hierarchy
 - Invite limits are strictly enforced with atomic database operations
 - User permissions validated before each operation
 - Sensitive operations logged for audit trail
